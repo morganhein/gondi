@@ -1,7 +1,8 @@
 package devices
 
 const (
-	SSH = iota
+	Any = iota
+	SSH
 	Telnet
 )
 

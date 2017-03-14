@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/morganhein/gondi"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -26,19 +25,32 @@ type cisco struct {
 	prompt       string
 }
 
-func (c *cisco) SupportedMethods() []byte {
-	return []byte{schema.SSH}
+// Options should return the connection options used for the current connection, if any
+func (*cisco) Options() DeviceOptions {
+	panic("implement me")
 }
 
-func (c *cisco) Connect(method byte, options schema.ConnectOptions, args ...string) error {
-	if method != gondi.SSH {
+func (*cisco) WriteCapture(command string) (result []string, err error) {
+	panic("implement me")
+}
+
+func (*cisco) WriteExpect(command, expectation string) (result []string, err error) {
+	panic("implement me")
+}
+
+func (c *cisco) SupportedMethods() []byte {
+	return []byte{SSH}
+}
+
+func (c *cisco) Connect(method byte, options ConnectOptions, args ...string) error {
+	if method != SSH {
 		return errors.New("That connection type is currently not supported for this device.")
 	}
 	return c.connectSsh(options)
 }
 
-func (c *cisco) connectSsh(options gondi.ConnectOptions) error {
-	c.sshConfig = helpers.CreateSSHConfig(options)
+func (c *cisco) connectSsh(options ConnectOptions) error {
+	c.sshConfig = CreateSSHConfig(options)
 	host := fmt.Sprint(options.Host, ":", options.Port)
 	conn, err := ssh.Dial("tcp", host, c.sshConfig)
 	if err != nil {
@@ -81,6 +93,10 @@ func (c *cisco) connectSsh(options gondi.ConnectOptions) error {
 func (c *cisco) Disconnect() {
 	c.stdin.Close()
 	c.session.Close()
+}
+
+func (c *cisco) Enable(password string) (err error) {
+	return nil
 }
 
 func (c *cisco) Write(command string) error {

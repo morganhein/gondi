@@ -1,15 +1,10 @@
 package devices
 
-import (
-	"github.com/morganhein/gondi"
-	"github.com/morganhein/gondi/schema"
-)
-
 const (
 	Cisco = iota
 )
 
-func New(options DeviceOptions) Device {
+func newDevice(options DeviceOptions) Device {
 	switch options.DeviceType {
 	case Cisco:
 		return &cisco{

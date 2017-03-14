@@ -3,21 +3,20 @@ package gondi
 import (
 	"fmt"
 	"github.com/morganhein/gondi/devices"
-	"github.com/morganhein/gondi/schema"
 )
 
 type Manager struct {
-	devices map[devices.Device]devices.DeviceOptions
+	devices []devices.Device
 }
 
-func New() *Manager {
+func NewG() *Manager {
 	g := &Manager{}
 	return g
 }
 
 func (m *Manager) AddDevice(id string, options devices.DeviceOptions) devices.Device {
-	d := devices.New(options)
-	m.devices[d] = options
+	d := newDevice(options)
+	m.devices = append(m.devices, d)
 	return d
 }
 
@@ -33,7 +32,7 @@ func (m *Manager) Connect(id string, options devices.DeviceOptions) {
 
 func (m *Manager) ConnectDevice(d devices.Device) {
 	for _, method := range d.SupportedMethods() {
-		if err := m.connect(d, method, m.devices[d].Conn); err == nil {
+		if err := m.connect(d, method); err == nil {
 			return
 		}
 		// add the device to the internal inventory
@@ -41,8 +40,8 @@ func (m *Manager) ConnectDevice(d devices.Device) {
 	}
 }
 
-func (m *Manager) connect(d devices.Device, method byte, options devices.ConnectOptions) error {
-	return d.Connect(method, options)
+func (m *Manager) connect(d devices.Device, method byte) error {
+	return d.Connect(method)
 }
 
 func (m *Manager) SendCommands(device devices.Device, commands []string) {
@@ -50,7 +49,7 @@ func (m *Manager) SendCommands(device devices.Device, commands []string) {
 		err := device.Write(cmd)
 		if err != nil {
 			fmt.Printf("Error sending command %s to device %s.",
-				cmd, m.devices[device].Conn.Host)
+				cmd, device.Options().Conn.Host)
 			return
 		}
 	}
