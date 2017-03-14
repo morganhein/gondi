@@ -4,8 +4,8 @@ const (
 	Cisco = iota
 )
 
-func newDevice(options DeviceOptions) Device {
-	switch options.DeviceType {
+func New(deviceType byte) Device {
+	switch deviceType {
 	case Cisco:
 		return &cisco{
 			prompt:       `> *\$|# *\$|\$ *$`,

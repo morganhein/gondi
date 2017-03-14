@@ -7,12 +7,12 @@ import (
 	"io"
 	"os"
 	"regexp"
-	"time"
 
 	"golang.org/x/crypto/ssh"
 )
 
 type cisco struct {
+	connOptions  ConnectOptions
 	sshConfig    *ssh.ClientConfig
 	connection   *ssh.Client
 	session      *ssh.Session
@@ -25,23 +25,6 @@ type cisco struct {
 	prompt       string
 }
 
-// Options should return the connection options used for the current connection, if any
-func (*cisco) Options() DeviceOptions {
-	panic("implement me")
-}
-
-func (*cisco) WriteCapture(command string) (result []string, err error) {
-	panic("implement me")
-}
-
-func (*cisco) WriteExpect(command, expectation string) (result []string, err error) {
-	panic("implement me")
-}
-
-func (c *cisco) SupportedMethods() []byte {
-	return []byte{SSH}
-}
-
 func (c *cisco) Connect(method byte, options ConnectOptions, args ...string) error {
 	if method != SSH {
 		return errors.New("That connection type is currently not supported for this device.")
@@ -49,8 +32,26 @@ func (c *cisco) Connect(method byte, options ConnectOptions, args ...string) err
 	return c.connectSsh(options)
 }
 
+// Options should return the connection options used for the current connection, if any
+func (c *cisco) Options() ConnectOptions {
+	return c.connOptions
+}
+
+func (c *cisco) WriteCapture(command string) (result []string, err error) {
+	panic("implement me")
+}
+
+func (c *cisco) WriteExpect(command, expectation string) (result []string, err error) {
+	panic("implement me")
+}
+
+func (c *cisco) SupportedMethods() []byte {
+	return []byte{SSH}
+}
+
 func (c *cisco) connectSsh(options ConnectOptions) error {
 	c.sshConfig = CreateSSHConfig(options)
+	c.connOptions.Method = SSH
 	host := fmt.Sprint(options.Host, ":", options.Port)
 	conn, err := ssh.Dial("tcp", host, c.sshConfig)
 	if err != nil {
@@ -65,6 +66,10 @@ func (c *cisco) connectSsh(options ConnectOptions) error {
 	c.stdin, _ = sess.StdinPipe()
 	c.stdout, _ = sess.StdoutPipe()
 	c.stderr, _ = sess.StderrPipe()
+
+	//copy to stdout, stderr
+	go io.Copy(os.Stdout, c.stdout)
+	go io.Copy(os.Stderr, c.stderr)
 
 	modes := ssh.TerminalModes{
 		ssh.ECHO:          0,     // disable echoing
@@ -86,7 +91,9 @@ func (c *cisco) connectSsh(options ConnectOptions) error {
 
 	// start receiving
 	go c.rx()
-
+	c.connOptions = options
+	fmt.Println("Secure shell session created.")
+	c.ready = true
 	return nil
 }
 
@@ -99,31 +106,26 @@ func (c *cisco) Enable(password string) (err error) {
 	return nil
 }
 
-func (c *cisco) Write(command string) error {
+func (c *cisco) Write(command string) (int, error) {
 	if !c.ready {
-		return errors.New("Device is not ready for a new command yet.")
+		return 0, errors.New("Device is not ready for a new command yet.")
 	}
 	c.ready = false
-	fmt.Print(c.stdin, command)
-	for !c.ready {
-		time.Sleep(50 * time.Duration(time.Millisecond))
-	}
-	return nil
+	fmt.Printf("Sending command: %v: \n", command)
+	return c.stdin.Write([]byte(command + "\r"))
 }
 
 //rx is the loop that receives stdout and stderr and copies it to output
 func (c *cisco) rx() error {
 	inScan := bufio.NewScanner(c.stdout)
 	errScan := bufio.NewScanner(c.stderr)
+
 	for {
 		select {
 		case <-c.shutdown:
 			c.ready = false
 			return nil
 		}
-		//copy to stdout, stderr
-		go io.Copy(os.Stdout, c.stdout)
-		go io.Copy(os.Stderr, c.stderr)
 
 		//foreach line separated by newlines
 		for errScan.Scan() {

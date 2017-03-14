@@ -1,56 +1,39 @@
 package gondi
 
 import (
-	"fmt"
+	"errors"
 	"github.com/morganhein/gondi/devices"
 )
 
 type Manager struct {
-	devices []devices.Device
+	devices map[string]devices.Device
 }
 
 func NewG() *Manager {
-	g := &Manager{}
+	g := &Manager{
+		devices: make(map[string]devices.Device),
+	}
 	return g
 }
 
-func (m *Manager) AddDevice(id string, options devices.DeviceOptions) devices.Device {
-	d := newDevice(options)
-	m.devices = append(m.devices, d)
-	return d
+// Connect tries to connect to the given device using the proposed method. It does not handle trying to connect
+// using other methods if the primary one fails, that should be handled upstream if there is an error.
+func (m *Manager) Connect(deviceType byte, id string, method byte, options devices.ConnectOptions) (devices.Device, error) {
+	device := devices.New(deviceType)
+
+	for _, supported := range device.SupportedMethods() {
+		if supported == method {
+			m.devices[id] = device
+			if err := device.Connect(method, options); err != nil {
+				return nil, err
+			}
+			return device, nil
+		}
+	}
+
+	return nil, errors.New("Device does not support the method requested.")
 }
 
 func (m *Manager) GetDevice(id string) (device devices.Device, err error) {
-	//if device exists return it,
-	//otherwise not found error
-}
-
-func (m *Manager) Connect(id string, options devices.DeviceOptions) {
-	d := m.AddDevice(id, options)
-	m.ConnectDevice(d)
-}
-
-func (m *Manager) ConnectDevice(d devices.Device) {
-	for _, method := range d.SupportedMethods() {
-		if err := m.connect(d, method); err == nil {
-			return
-		}
-		// add the device to the internal inventory
-
-	}
-}
-
-func (m *Manager) connect(d devices.Device, method byte) error {
-	return d.Connect(method)
-}
-
-func (m *Manager) SendCommands(device devices.Device, commands []string) {
-	for _, cmd := range commands {
-		err := device.Write(cmd)
-		if err != nil {
-			fmt.Printf("Error sending command %s to device %s.",
-				cmd, device.Options().Conn.Host)
-			return
-		}
-	}
+	return m.devices[id], nil
 }

@@ -1,0 +1,2 @@
+"device name",method,"host",port,"username","password","enable_password"
+"myDevice",0,"172.31.51.51",22,"root","password","enable_password"

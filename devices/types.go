@@ -1,22 +1,16 @@
 package devices
 
 const (
-	Any = iota
-	SSH
+	SSH = iota
 	Telnet
 )
 
-type DeviceOptions struct {
-	Prompt       string
-	Continuation []string
-	DeviceType   int
-	Conn         ConnectOptions
-}
-
 type ConnectOptions struct {
-	Host     string
-	Port     int
-	Username string
-	Password string
-	Cert     string
+	Host           string
+	Port           int
+	Username       string
+	Password       string
+	EnablePassword string
+	Cert           string
+	Method         byte
 }
