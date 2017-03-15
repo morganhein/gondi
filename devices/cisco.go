@@ -23,6 +23,15 @@ type cisco struct {
 	shutdown     chan bool
 	continuation []string
 	prompt       string
+	captureChan  chan chan string // the return channel for the text capture
+	returnChan   chan bool        // True when a write command is expecting returned text for capture
+}
+
+func (c *cisco) Initialize() error {
+	c.captureChan = make(chan chan string)
+	c.returnChan = make(chan bool)
+	c.prompt = `> *\$|# *\$|\$ *$`
+	c.continuation = []string{"--more--"}
 }
 
 func (c *cisco) Connect(method byte, options ConnectOptions, args ...string) error {
@@ -30,19 +39,6 @@ func (c *cisco) Connect(method byte, options ConnectOptions, args ...string) err
 		return errors.New("That connection type is currently not supported for this device.")
 	}
 	return c.connectSsh(options)
-}
-
-// Options should return the connection options used for the current connection, if any
-func (c *cisco) Options() ConnectOptions {
-	return c.connOptions
-}
-
-func (c *cisco) WriteCapture(command string) (result []string, err error) {
-	panic("implement me")
-}
-
-func (c *cisco) WriteExpect(command, expectation string) (result []string, err error) {
-	panic("implement me")
 }
 
 func (c *cisco) SupportedMethods() []byte {
@@ -106,25 +102,51 @@ func (c *cisco) Enable(password string) (err error) {
 	return nil
 }
 
-func (c *cisco) Write(command string) (int, error) {
-	if !c.ready {
-		return 0, errors.New("Device is not ready for a new command yet.")
+func (c *cisco) Write(command string, newline bool) (int, error) {
+	//if !c.ready {
+	//	return 0, errors.New("Device is not ready for a new command yet.")
+	//}
+	if newline {
+		command += "\r"
 	}
-	c.ready = false
 	fmt.Printf("Sending command: %v: \n", command)
-	return c.stdin.Write([]byte(command + "\r"))
+	return c.stdin.Write([]byte(command))
+}
+
+func (c *cisco) WriteCapture(command string) (result []string, err error) {
+	panic("implement me")
+}
+
+func (c *cisco) WriteExpect(command, expectation string) (result []string, err error) {
+	c.ready = false
+	// create the channel for return data
+	c.returnChan <- true
+	ch := make(chan string, 10)
+	c.captureChan <- ch
+
+	// write the command
+	_, err = c.Write(command, true)
+	if err != nil {
+		return []string{}, err
+	}
+	c.returnChan <- false
+	c.ready = true
 }
 
 //rx is the loop that receives stdout and stderr and copies it to output
 func (c *cisco) rx() error {
 	inScan := bufio.NewScanner(c.stdout)
 	errScan := bufio.NewScanner(c.stderr)
+	capturing := false
+	writeReturn := make(chan string, 10)
 
 	for {
 		select {
 		case <-c.shutdown:
 			c.ready = false
 			return nil
+		case capturing = <-c.returnChan:
+		case writeReturn = <-c.captureChan:
 		}
 
 		//foreach line separated by newlines
@@ -135,13 +157,21 @@ func (c *cisco) rx() error {
 
 		for inScan.Scan() {
 			line := inScan.Text()
-			//detect if it's a prompt
-			if prompt := c.detectPrompts(line); prompt {
-				c.ready = true
+			if capturing {
+				writeReturn <- line
 			}
+			////detect if it's a prompt
+			//if prompt := c.detectPrompts(line); prompt {
+			//	c.ready = true
+			//}
 		}
 	}
 	return nil
+}
+
+// Options should return the connection options used for the current connection, if any
+func (c *cisco) Options() ConnectOptions {
+	return c.connOptions
 }
 
 //detectPrompts looks for prompts that require interaction like '--more--' and handles them, and also

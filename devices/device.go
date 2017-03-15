@@ -7,14 +7,18 @@ const (
 func New(deviceType byte) Device {
 	switch deviceType {
 	case Cisco:
-		return &cisco{
-			prompt:       `> *\$|# *\$|\$ *$`,
-			continuation: []string{"--more--"},
+		d := &cisco{}
+		err := d.Initialize()
+		if err != nil {
+			return nil
 		}
+		return d
 	default:
-		return &cisco{
-			prompt:       `> *\$|# *\$|\$ *$`,
-			continuation: []string{"--more--"},
+		d := &cisco{}
+		err := d.Initialize()
+		if err != nil {
+			return nil
 		}
+		return d
 	}
 }

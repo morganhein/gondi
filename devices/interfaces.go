@@ -1,6 +1,8 @@
 package devices
 
 type Device interface {
+	//Initialize sets up the device. Must be called prior to using the device
+	Initialize() error
 	//SupportedMethods is a list of supported connection methods, ie SSH, Telnet, CarrierPigeon
 	SupportedMethods() []byte
 	//Connect tries to connect using the devices connection options, and optional arguments
@@ -9,7 +11,8 @@ type Device interface {
 	Disconnect()
 	//Enable tries to enter "enable mode" on the device
 	Enable(password string) (err error)
-	Write(command string) (sent int, err error) //returns when ready for the next command
+	//Write sends the command on the wire, optionally with a return character at the end
+	Write(command string, newline bool) (sent int, err error)
 	// WriteExpect writes to the device, waits for the expectation, and returns the captured text
 	WriteExpect(command, expectation string) (result []string, err error)
 	//WriteCapture is a shortcut for WriteExpect(command, device.prompt)
