@@ -51,9 +51,17 @@ func main() {
 		}
 
 		fmt.Println("Successfully connected to device.")
-		dev.Write("show run")
-		time.Sleep(10 * time.Second)
+		time.Sleep(time.Duration(1) * time.Second)
+		ret, err := dev.WriteCapture("show video global config")
+		fmt.Println("\n\nResult:")
+		if err != nil {
+			fmt.Printf("%s\n", err.Error())
+		} else {
+			fmt.Println(ret)
+		}
+
 		fmt.Println("Exiting.")
 		dev.Disconnect()
 	}
+	g.Shutdown()
 }

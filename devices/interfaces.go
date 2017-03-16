@@ -1,5 +1,7 @@
 package devices
 
+import "regexp"
+
 type Device interface {
 	//Initialize sets up the device. Must be called prior to using the device
 	Initialize() error
@@ -14,7 +16,7 @@ type Device interface {
 	//Write sends the command on the wire, optionally with a return character at the end
 	Write(command string, newline bool) (sent int, err error)
 	// WriteExpect writes to the device, waits for the expectation, and returns the captured text
-	WriteExpect(command, expectation string) (result []string, err error)
+	WriteExpect(command string, expectation *regexp.Regexp) (result []string, err error)
 	//WriteCapture is a shortcut for WriteExpect(command, device.prompt)
 	WriteCapture(command string) (result []string, err error)
 	//Options returns the connection options used for this device

@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"regexp"
+	"runtime"
+	"time"
 
+	"github.com/morganhein/gondi/dispatch"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -21,17 +23,24 @@ type cisco struct {
 	stdin        io.WriteCloser
 	stderr       io.Reader
 	shutdown     chan bool
-	continuation []string
-	prompt       string
-	captureChan  chan chan string // the return channel for the text capture
-	returnChan   chan bool        // True when a write command is expecting returned text for capture
+	continuation []*regexp.Regexp
+	prompt       *regexp.Regexp
+	events       chan dispatch.Event
+	dispatch     *dispatch.Dispatcher
+	timeout      int // The default timeout for this device
 }
 
 func (c *cisco) Initialize() error {
-	c.captureChan = make(chan chan string)
-	c.returnChan = make(chan bool)
-	c.prompt = `> *\$|# *\$|\$ *$`
-	c.continuation = []string{"--more--"}
+	c.events = make(chan dispatch.Event, 20)
+	c.dispatch = dispatch.New(c.events)
+	c.prompt, _ = regexp.Compile(`> *$|# *$|$ *$`)
+	for _, next := range []string{"^--more--$"} {
+		if re, err := regexp.Compile(next); err == nil {
+			c.continuation = append(c.continuation, re)
+		}
+	}
+	c.timeout = 8
+	return nil
 }
 
 func (c *cisco) Connect(method byte, options ConnectOptions, args ...string) error {
@@ -54,18 +63,13 @@ func (c *cisco) connectSsh(options ConnectOptions) error {
 		return fmt.Errorf("Failed to dial: %s", err)
 	}
 	c.connection = conn
-	sess, err := c.connection.NewSession()
+	c.session, err = c.connection.NewSession()
 	if err != nil {
 		fmt.Errorf("Failed to create session: %s", err)
 	}
-	c.session = sess
-	c.stdin, _ = sess.StdinPipe()
-	c.stdout, _ = sess.StdoutPipe()
-	c.stderr, _ = sess.StderrPipe()
-
-	//copy to stdout, stderr
-	go io.Copy(os.Stdout, c.stdout)
-	go io.Copy(os.Stderr, c.stderr)
+	c.stdin, _ = c.session.StdinPipe()
+	c.stdout, _ = c.session.StdoutPipe()
+	c.stderr, _ = c.session.StderrPipe()
 
 	modes := ssh.TerminalModes{
 		ssh.ECHO:          0,     // disable echoing
@@ -85,8 +89,6 @@ func (c *cisco) connectSsh(options ConnectOptions) error {
 	}
 	c.shutdown = make(chan bool, 1)
 
-	// start receiving
-	go c.rx()
 	c.connOptions = options
 	fmt.Println("Secure shell session created.")
 	c.ready = true
@@ -109,81 +111,100 @@ func (c *cisco) Write(command string, newline bool) (int, error) {
 	if newline {
 		command += "\r"
 	}
-	fmt.Printf("Sending command: %v: \n", command)
 	return c.stdin.Write([]byte(command))
 }
 
 func (c *cisco) WriteCapture(command string) (result []string, err error) {
-	panic("implement me")
+	return c.WriteExpect(command, c.prompt)
 }
 
-func (c *cisco) WriteExpect(command, expectation string) (result []string, err error) {
+func (c *cisco) WriteExpect(command string, expectation *regexp.Regexp) (result []string, err error) {
+	if !c.ready {
+		return result, errors.New("Device not ready to send another write command that requires capturing.")
+	}
+
 	c.ready = false
-	// create the channel for return data
-	c.returnChan <- true
-	ch := make(chan string, 10)
-	c.captureChan <- ch
+	//c.capture <- true
+
+	defer func() {
+		//c.capture <- false
+		c.ready = true
+	}()
 
 	// write the command
 	_, err = c.Write(command, true)
 	if err != nil {
+		// Unable to write command
 		return []string{}, err
 	}
-	c.returnChan <- false
-	c.ready = true
-}
+	inScan := bufio.NewReader(c.stdout)
 
-//rx is the loop that receives stdout and stderr and copies it to output
-func (c *cisco) rx() error {
-	inScan := bufio.NewScanner(c.stdout)
-	errScan := bufio.NewScanner(c.stderr)
-	capturing := false
-	writeReturn := make(chan string, 10)
+	//create the timeout
+	cancel := make(chan bool, 1)
+	go func(timeout int) {
+		time.Sleep(time.Duration(timeout) * time.Second)
+		fmt.Println("\nTimer expired.")
+		cancel <- true
+	}(c.timeout)
 
 	for {
-		select {
-		case <-c.shutdown:
-			c.ready = false
-			return nil
-		case capturing = <-c.returnChan:
-		case writeReturn = <-c.captureChan:
-		}
-
-		//foreach line separated by newlines
-		for errScan.Scan() {
-			err := errScan.Text()
-			return errors.New(err)
-		}
-
-		for inScan.Scan() {
-			line := inScan.Text()
-			if capturing {
-				writeReturn <- line
+		if inScan.Buffered() > 0 {
+			line, err := inScan.ReadString('\n')
+			if err != nil {
+				fmt.Printf("Encountered error when trying to read the next line: %v", err.Error())
+				continue
 			}
-			////detect if it's a prompt
-			//if prompt := c.detectPrompts(line); prompt {
-			//	c.ready = true
-			//}
+			result = append(result, line)
+			//send enter key when needing continuation
+			c.handleContinuation(line)
+			//detect if it's the regex we're looking for
+			if found := c.match(line, expectation); found {
+				return result, nil
+			}
+		}
+		select {
+		case <-cancel:
+			return result, errors.New("Command timeout reached without detecting expectation.")
 		}
 	}
-	return nil
+	return []string{}, errors.New("Reached end of WriteExpect without receiving line data. This error " +
+		"shouldn't happen")
+}
+
+func (c *cisco) match(line string, reg *regexp.Regexp) bool {
+	return reg.Find([]byte(line)) != nil
 }
 
 // Options should return the connection options used for the current connection, if any
 func (c *cisco) Options() ConnectOptions {
+	runtime.Gosched()
 	return c.connOptions
+}
+
+func (c *cisco) handleContinuation(line string) {
+	for _, con := range c.continuation {
+		if matched := con.Find([]byte(line)); matched != nil {
+			// send enter key, bypassing the normal Write logic
+			c.stdin.Write([]byte("\r"))
+		}
+	}
 }
 
 //detectPrompts looks for prompts that require interaction like '--more--' and handles them, and also
 //returns true when the normal text prompt is detected
 func (c *cisco) detectPrompts(line string) bool {
-	for _, con := range c.continuation {
-		if matched, _ := regexp.MatchString(con, line); matched {
-			// send enter key, bypassing the normal Write logic
-			fmt.Fprint(c.stdin, "\r")
-			return false
+	if matched := c.prompt.Find([]byte(line)); matched != nil {
+		fmt.Println("Detected prompt.")
+		return true
+	}
+	return false
+}
+
+func (c *cisco) io(shutdown chan bool) {
+	for {
+		select {
+		case <-shutdown:
+			break
 		}
 	}
-	matched, _ := regexp.MatchString(c.prompt, line)
-	return matched
 }
