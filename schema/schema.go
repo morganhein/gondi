@@ -1,6 +1,28 @@
-package devices
+package schema
 
-import "regexp"
+import (
+	"regexp"
+	"time"
+)
+
+type EventType int
+
+type MessageEvent struct {
+	source  Device
+	message string
+	dir     EventType
+	time    *time.Time
+}
+
+type ConnectOptions struct {
+	Host           string
+	Port           int
+	Username       string
+	Password       string
+	EnablePassword string
+	Cert           string
+	Method         byte
+}
 
 type Device interface {
 	//Initialize sets up the device. Must be called prior to using the device

@@ -9,12 +9,13 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/morganhein/gondi/dispatch"
+	"github.com/morganhein/gondi/pubsub"
+	"github.com/morganhein/gondi/schema"
 	"golang.org/x/crypto/ssh"
 )
 
 type cisco struct {
-	connOptions  ConnectOptions
+	connOptions  schema.ConnectOptions
 	sshConfig    *ssh.ClientConfig
 	connection   *ssh.Client
 	session      *ssh.Session
@@ -25,14 +26,14 @@ type cisco struct {
 	shutdown     chan bool
 	continuation []*regexp.Regexp
 	prompt       *regexp.Regexp
-	events       chan dispatch.Event
-	dispatch     *dispatch.Dispatcher
+	events       chan schema.MessageEvent
+	dispatcher   *pubsub.Dispatcher
 	timeout      int // The default timeout for this device
 }
 
 func (c *cisco) Initialize() error {
-	c.events = make(chan dispatch.Event, 20)
-	c.dispatch = dispatch.New(c.events)
+	c.events = make(chan schema.MessageEvent, 20)
+	c.dispatcher = pubsub.New(c.events)
 	c.prompt, _ = regexp.Compile(`> *$|# *$|$ *$`)
 	for _, next := range []string{"^--more--$"} {
 		if re, err := regexp.Compile(next); err == nil {
@@ -43,7 +44,7 @@ func (c *cisco) Initialize() error {
 	return nil
 }
 
-func (c *cisco) Connect(method byte, options ConnectOptions, args ...string) error {
+func (c *cisco) Connect(method byte, options schema.ConnectOptions, args ...string) error {
 	if method != SSH {
 		return errors.New("That connection type is currently not supported for this device.")
 	}
@@ -54,7 +55,7 @@ func (c *cisco) SupportedMethods() []byte {
 	return []byte{SSH}
 }
 
-func (c *cisco) connectSsh(options ConnectOptions) error {
+func (c *cisco) connectSsh(options schema.ConnectOptions) error {
 	c.sshConfig = CreateSSHConfig(options)
 	c.connOptions.Method = SSH
 	host := fmt.Sprint(options.Host, ":", options.Port)
@@ -176,7 +177,7 @@ func (c *cisco) match(line string, reg *regexp.Regexp) bool {
 }
 
 // Options should return the connection options used for the current connection, if any
-func (c *cisco) Options() ConnectOptions {
+func (c *cisco) Options() schema.ConnectOptions {
 	runtime.Gosched()
 	return c.connOptions
 }
@@ -198,13 +199,4 @@ func (c *cisco) detectPrompts(line string) bool {
 		return true
 	}
 	return false
-}
-
-func (c *cisco) io(shutdown chan bool) {
-	for {
-		select {
-		case <-shutdown:
-			break
-		}
-	}
 }

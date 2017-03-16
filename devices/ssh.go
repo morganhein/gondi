@@ -3,6 +3,7 @@ package devices
 import (
 	"io/ioutil"
 
+	"github.com/morganhein/gondi/schema"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -19,7 +20,7 @@ func publicKeyFile(file string) ssh.AuthMethod {
 	return ssh.PublicKeys(key)
 }
 
-func CreateSSHConfig(options ConnectOptions) (sshConfig *ssh.ClientConfig) {
+func CreateSSHConfig(options schema.ConnectOptions) (sshConfig *ssh.ClientConfig) {
 	sshConfig = &ssh.ClientConfig{
 		User: options.Username,
 	}

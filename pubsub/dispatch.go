@@ -1,47 +1,43 @@
-package dispatch
+package pubsub
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/morganhein/gondi/schema"
+)
 
 type Dispatcher struct {
-	input       chan Event
-	subscribers map[int]chan Event
+	input       chan schema.MessageEvent
+	subscribers map[int]chan schema.MessageEvent
 }
 
-type EventType int
-
 const (
-	Stdin  EventType = iota
-	Stderr EventType = iota
-	Stdout EventType = iota
+	Stdin  schema.EventType = iota
+	Stderr schema.EventType = iota
+	Stdout schema.EventType = iota
 )
 
 type singleton struct {
-	subscribers map[int]chan Event
+	subscribers map[int]chan schema.MessageEvent
 }
 
 var dist singleton
 
 func init() {
 	dist = singleton{
-		subscribers: make(map[int]chan Event, 2),
+		subscribers: make(map[int]chan schema.MessageEvent, 2),
 	}
 }
 
-type Event struct {
-	source  string
-	message string
-	dir     EventType
-}
-
-func New(input chan Event) *Dispatcher {
+func New(input chan schema.MessageEvent) *Dispatcher {
 	return &Dispatcher{
 		input:       input,
-		subscribers: make(map[int]chan Event, 2),
+		subscribers: make(map[int]chan schema.MessageEvent, 2),
 	}
 }
 
 //Subscribe adds a listener to this dispatcher.
-func (d *Dispatcher) Subscribe(sub chan Event) (id int) {
+func (d *Dispatcher) Subscribe(sub chan schema.MessageEvent) (id int) {
 	//create a slice of the keys, sorted
 	keys := make([]int, len(d.subscribers))
 	i := 0
@@ -87,7 +83,7 @@ func (d *Dispatcher) Start(quit chan bool) {
 	}()
 }
 
-func Subscribe(sub chan Event) (id int) {
+func Subscribe(sub chan schema.MessageEvent) (id int) {
 	//create a slice of the keys, sorted
 	keys := make([]int, len(dist.subscribers))
 	i := 0
