@@ -7,11 +7,17 @@ import (
 
 type EventType int
 
+const (
+	Stdin  EventType = iota
+	Stderr EventType = iota
+	Stdout EventType = iota
+)
+
 type MessageEvent struct {
-	source  Device
-	message string
-	dir     EventType
-	time    *time.Time
+	Source  Device
+	Message string
+	Dir     EventType
+	Time    time.Time
 }
 
 type ConnectOptions struct {

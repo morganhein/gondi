@@ -4,11 +4,25 @@ import (
 	"errors"
 
 	"github.com/morganhein/gondi/devices"
+	"github.com/morganhein/gondi/schema"
 )
+
+type Manager struct {
+	devices      map[string]schema.Device
+	dispatchQuit chan bool
+}
+
+func NewG() *Manager {
+	g := &Manager{
+		devices:      make(map[string]schema.Device),
+		dispatchQuit: make(chan bool, 1),
+	}
+	return g
+}
 
 // Connect tries to connect to the given device using the proposed method. It does not handle trying to connect
 // using other methods if the primary one fails, that should be handled upstream if there is an error.
-func (m *Manager) Connect(deviceType byte, id string, method byte, options devices.ConnectOptions) (devices.Device, error) {
+func (m *Manager) Connect(deviceType byte, id string, method byte, options schema.ConnectOptions) (schema.Device, error) {
 	device := devices.New(deviceType)
 
 	for _, supported := range device.SupportedMethods() {
@@ -24,15 +38,13 @@ func (m *Manager) Connect(deviceType byte, id string, method byte, options devic
 	return nil, errors.New("Device does not support the method requested.")
 }
 
-func (m *Manager) GetDevice(id string) (device devices.Device, err error) {
+func (m *Manager) GetDevice(id string) (device schema.Device, err error) {
 	return m.devices[id], nil
 }
 
 func (m *Manager) Shutdown() error {
-	m.dispatchQuit <- true
+	for _, d := range m.devices {
+		d.Disconnect()
+	}
 	return nil
-}
-
-func output() {
-
 }

@@ -1,7 +1,6 @@
 package devices
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +11,7 @@ import (
 	"github.com/morganhein/gondi/pubsub"
 	"github.com/morganhein/gondi/schema"
 	"golang.org/x/crypto/ssh"
+	"os"
 )
 
 type cisco struct {
@@ -23,23 +23,24 @@ type cisco struct {
 	stdout       io.Reader
 	stdin        io.WriteCloser
 	stderr       io.Reader
-	shutdown     chan bool
+	shutdown     chan bool //shutdown channel for the publisher
 	continuation []*regexp.Regexp
 	prompt       *regexp.Regexp
 	events       chan schema.MessageEvent
-	dispatcher   *pubsub.Dispatcher
+	publisher    *pubsub.Publisher
 	timeout      int // The default timeout for this device
 }
 
 func (c *cisco) Initialize() error {
 	c.events = make(chan schema.MessageEvent, 20)
-	c.dispatcher = pubsub.New(c.events)
+	c.publisher = pubsub.New(c, c.events)
 	c.prompt, _ = regexp.Compile(`> *$|# *$|$ *$`)
 	for _, next := range []string{"^--more--$"} {
 		if re, err := regexp.Compile(next); err == nil {
 			c.continuation = append(c.continuation, re)
 		}
 	}
+	c.ready = false
 	c.timeout = 8
 	return nil
 }
@@ -72,6 +73,10 @@ func (c *cisco) connectSsh(options schema.ConnectOptions) error {
 	c.stdout, _ = c.session.StdoutPipe()
 	c.stderr, _ = c.session.StderrPipe()
 
+	c.shutdown = make(chan bool, 1)
+	go io.Copy(os.Stdout, c.stdout)
+	go c.publisher.Attach(c.stdout, c.stderr, c.shutdown)
+
 	modes := ssh.TerminalModes{
 		ssh.ECHO:          0,     // disable echoing
 		ssh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
@@ -88,8 +93,6 @@ func (c *cisco) connectSsh(options schema.ConnectOptions) error {
 	if err := c.session.Shell(); err != nil {
 		return fmt.Errorf("Failed to start shell: %s", err)
 	}
-	c.shutdown = make(chan bool, 1)
-
 	c.connOptions = options
 	fmt.Println("Secure shell session created.")
 	c.ready = true
@@ -99,6 +102,7 @@ func (c *cisco) connectSsh(options schema.ConnectOptions) error {
 func (c *cisco) Disconnect() {
 	c.stdin.Close()
 	c.session.Close()
+	c.shutdown <- true
 }
 
 func (c *cisco) Enable(password string) (err error) {
@@ -106,9 +110,6 @@ func (c *cisco) Enable(password string) (err error) {
 }
 
 func (c *cisco) Write(command string, newline bool) (int, error) {
-	//if !c.ready {
-	//	return 0, errors.New("Device is not ready for a new command yet.")
-	//}
 	if newline {
 		command += "\r"
 	}
@@ -125,11 +126,13 @@ func (c *cisco) WriteExpect(command string, expectation *regexp.Regexp) (result 
 	}
 
 	c.ready = false
-	//c.capture <- true
+
+	events := make(chan schema.MessageEvent, 20)
+	id := c.publisher.Subscribe(events)
 
 	defer func() {
-		//c.capture <- false
 		c.ready = true
+		c.publisher.Unsubscribe(id)
 	}()
 
 	// write the command
@@ -138,7 +141,6 @@ func (c *cisco) WriteExpect(command string, expectation *regexp.Regexp) (result 
 		// Unable to write command
 		return []string{}, err
 	}
-	inScan := bufio.NewReader(c.stdout)
 
 	//create the timeout
 	cancel := make(chan bool, 1)
@@ -149,21 +151,18 @@ func (c *cisco) WriteExpect(command string, expectation *regexp.Regexp) (result 
 	}(c.timeout)
 
 	for {
-		if inScan.Buffered() > 0 {
-			line, err := inScan.ReadString('\n')
-			if err != nil {
-				fmt.Printf("Encountered error when trying to read the next line: %v", err.Error())
-				continue
-			}
-			result = append(result, line)
-			//send enter key when needing continuation
-			c.handleContinuation(line)
-			//detect if it's the regex we're looking for
-			if found := c.match(line, expectation); found {
-				return result, nil
-			}
-		}
 		select {
+		case event := <-events:
+			if event.Dir == schema.Stdout {
+				result = append(result, event.Message)
+				if found := c.match(event.Message, expectation); found {
+					return result, nil
+				}
+			}
+			if event.Dir == schema.Stderr {
+				result = append(result, event.Message)
+			}
+			c.handleContinuation(event.Message)
 		case <-cancel:
 			return result, errors.New("Command timeout reached without detecting expectation.")
 		}
@@ -189,14 +188,4 @@ func (c *cisco) handleContinuation(line string) {
 			c.stdin.Write([]byte("\r"))
 		}
 	}
-}
-
-//detectPrompts looks for prompts that require interaction like '--more--' and handles them, and also
-//returns true when the normal text prompt is detected
-func (c *cisco) detectPrompts(line string) bool {
-	if matched := c.prompt.Find([]byte(line)); matched != nil {
-		fmt.Println("Detected prompt.")
-		return true
-	}
-	return false
 }
