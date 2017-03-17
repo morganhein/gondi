@@ -6,13 +6,12 @@ import (
 	"io"
 	"regexp"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/morganhein/gondi/pubsub"
 	"github.com/morganhein/gondi/schema"
 	"golang.org/x/crypto/ssh"
-	//"os"
-	"sync"
 )
 
 type cisco struct {
@@ -36,7 +35,7 @@ type cisco struct {
 func (c *cisco) Initialize() error {
 	c.events = make(chan schema.MessageEvent, 20)
 	c.publisher = pubsub.New(c, c.events)
-	c.prompt, _ = regexp.Compile(`> *$|# *$|$ *$`)
+	c.prompt, _ = regexp.Compile(`> *$|# *$|\$ *$`)
 	for _, next := range []string{"^--more--$"} {
 		if re, err := regexp.Compile(next); err == nil {
 			c.continuation = append(c.continuation, re)
@@ -173,7 +172,7 @@ func (c *cisco) WriteExpect(command string, expectation *regexp.Regexp) (result 
 		}
 	}
 	return []string{}, errors.New("Reached end of WriteExpect without receiving line data. This error " +
-		"shouldn't happen")
+		"shouldn't happen.")
 }
 
 func (c *cisco) match(line string, reg *regexp.Regexp) bool {

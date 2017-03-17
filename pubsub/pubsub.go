@@ -134,6 +134,15 @@ func (p *Publisher) start(shutdown chan bool, wg sync.WaitGroup) {
 func attachReader(device schema.Device, r io.Reader, t schema.EventType, output chan schema.MessageEvent) {
 	fmt.Printf("Reader of type %v attached to r.\n", t)
 	scanner := bufio.NewScanner(r)
+	onNewline := func(data []byte, atEOF bool) (advance int, token []byte, err error) {
+		for i := 0; i < len(data); i++ {
+			if data[i] == '\n' {
+				return i + 1, data[:i], nil
+			}
+		}
+		return len(data), data, nil
+	}
+	scanner.Split(onNewline)
 	for scanner.Scan() {
 		line := scanner.Text()
 		e := schema.MessageEvent{
