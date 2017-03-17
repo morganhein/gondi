@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/morganhein/gondi"
-	"github.com/morganhein/gondi/transport"
 	"github.com/morganhein/gondi/schema"
+	"github.com/morganhein/gondi/transport"
 )
 
 func main() {
@@ -39,7 +39,7 @@ func main() {
 		if err != nil {
 			fmt.Printf("Error converting the port to an integer: %s", err)
 		}
-		dev, err := g.Connect(transport.Cisco, row[0], byte(t), schema.ConnectOptions{
+		dev, err := g.Connect(transport.Casa, row[0], byte(t), schema.ConnectOptions{
 			Host:           row[2],
 			Port:           p,
 			Username:       row[4],
@@ -54,25 +54,24 @@ func main() {
 
 		fmt.Println("Successfully connected to device.")
 		time.Sleep(time.Duration(1) * time.Second)
-		ret, err := dev.WriteCapture("show video global config")
+		ret, err := dev.WriteCapture("show run")
 		fmt.Println("\n\nResult:")
 		if err != nil {
 			fmt.Printf("%s\n", err.Error())
-		} else {
-			b, _ := json.MarshalIndent(ret, "", "  ")
-			println(string(b))
 		}
+		b, _ := json.MarshalIndent(ret, "", "  ")
+		println(string(b))
 
-		ret, err = dev.WriteCapture("show alias")
-		fmt.Println("\n\nResult:")
-		if err != nil {
-			fmt.Printf("%s\n", err.Error())
-		} else {
-			b, _ := json.MarshalIndent(ret, "", "  ")
-			println(string(b))
-		}
-
-		fmt.Println("Exiting.")
+		//ret, err = dev.WriteCapture("show alias")
+		//fmt.Println("\n\nResult:")
+		//if err != nil {
+		//	fmt.Printf("%s\n", err.Error())
+		//} else {
+		//	b, _ := json.MarshalIndent(ret, "", "  ")
+		//	println(string(b))
+		//}
+		//
+		//fmt.Println("Exiting.")
 		dev.Disconnect()
 	}
 	g.Shutdown()

@@ -151,7 +151,7 @@ func attachReader(device schema.Device, r io.Reader, t schema.EventType, output 
 			Dir:     t,
 			Time:    time.Now(),
 		}
-		fmt.Println(e.Message)
+		//fmt.Println(e.Message)
 		output <- e
 	}
 }

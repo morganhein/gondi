@@ -36,13 +36,13 @@ func (c *casa) Initialize() error {
 	c.events = make(chan schema.MessageEvent, 20)
 	c.publisher = pubsub.New(c, c.events)
 	c.prompt, _ = regexp.Compile(`> *$|# *$|\$ *$`)
-	for _, next := range []string{"^--more--$", ``} {
+	for _, next := range []string{`:\r$`, `:\x1B\[K$`} {
 		if re, err := regexp.Compile(next); err == nil {
 			c.continuation = append(c.continuation, re)
 		}
 	}
 	c.ready = false
-	c.timeout = 800
+	c.timeout = 8
 	return nil
 }
 
@@ -145,13 +145,8 @@ func (c *casa) WriteExpect(command string, expectation *regexp.Regexp) (result [
 		return []string{}, err
 	}
 
-	//create the timeout
-	cancel := make(chan bool, 1)
-	go func(timeout int) {
-		time.Sleep(time.Duration(timeout) * time.Second)
-		fmt.Println("\nTimer expired.")
-		cancel <- true
-	}(c.timeout)
+	// Create the timeout timer using this device types default
+	timer := time.NewTimer(time.Duration(c.timeout) * time.Second)
 
 	for {
 		select {
@@ -166,8 +161,9 @@ func (c *casa) WriteExpect(command string, expectation *regexp.Regexp) (result [
 			if event.Dir == schema.Stderr {
 				result = append(result, event.Message)
 			}
+			timer.Reset(time.Duration(c.timeout) * time.Second)
 			c.handleContinuation(event.Message)
-		case <-cancel:
+		case <-timer.C:
 			return result, errors.New("Command timeout reached without detecting expectation.")
 		}
 	}
@@ -186,10 +182,12 @@ func (c *casa) Options() schema.ConnectOptions {
 }
 
 func (c *casa) handleContinuation(line string) {
+	fmt.Println(line)
+
 	for _, con := range c.continuation {
 		if matched := con.Find([]byte(line)); matched != nil {
-			// send enter key, bypassing the normal Write logic
-			c.stdin.Write([]byte("\r"))
+			fmt.Println("Found continuation request.")
+			c.Write(" ", true)
 		}
 	}
 }
