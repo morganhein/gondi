@@ -16,14 +16,14 @@ const (
 func New(deviceType byte) schema.Device {
 	switch deviceType {
 	case Cisco:
-		d := &cisco{}
+		d := &casa{}
 		err := d.Initialize()
 		if err != nil {
 			return nil
 		}
 		return d
 	default:
-		d := &cisco{}
+		d := &casa{}
 		err := d.Initialize()
 		if err != nil {
 			return nil

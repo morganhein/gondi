@@ -14,7 +14,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-type cisco struct {
+type casa struct {
 	connOptions  schema.ConnectOptions
 	sshConfig    *ssh.ClientConfig
 	connection   *ssh.Client
@@ -32,11 +32,11 @@ type cisco struct {
 	attachWg     sync.WaitGroup // The waitgroup for the publisher attachment
 }
 
-func (c *cisco) Initialize() error {
+func (c *casa) Initialize() error {
 	c.events = make(chan schema.MessageEvent, 20)
 	c.publisher = pubsub.New(c, c.events)
 	c.prompt, _ = regexp.Compile(`> *$|# *$|\$ *$`)
-	for _, next := range []string{"^--more--$"} {
+	for _, next := range []string{"^--more--$", ``} {
 		if re, err := regexp.Compile(next); err == nil {
 			c.continuation = append(c.continuation, re)
 		}
@@ -46,18 +46,18 @@ func (c *cisco) Initialize() error {
 	return nil
 }
 
-func (c *cisco) Connect(method byte, options schema.ConnectOptions, args ...string) error {
+func (c *casa) Connect(method byte, options schema.ConnectOptions, args ...string) error {
 	if method != SSH {
 		return errors.New("That connection type is currently not supported for this device.")
 	}
 	return c.connectSsh(options)
 }
 
-func (c *cisco) SupportedMethods() []byte {
+func (c *casa) SupportedMethods() []byte {
 	return []byte{SSH}
 }
 
-func (c *cisco) connectSsh(options schema.ConnectOptions) error {
+func (c *casa) connectSsh(options schema.ConnectOptions) error {
 	c.sshConfig = CreateSSHConfig(options)
 	c.connOptions.Method = SSH
 	host := fmt.Sprint(options.Host, ":", options.Port)
@@ -100,7 +100,7 @@ func (c *cisco) connectSsh(options schema.ConnectOptions) error {
 	return nil
 }
 
-func (c *cisco) Disconnect() bool {
+func (c *casa) Disconnect() bool {
 	c.stdin.Close()
 	c.session.Close()
 	c.shutdown <- true
@@ -108,22 +108,22 @@ func (c *cisco) Disconnect() bool {
 	return true
 }
 
-func (c *cisco) Enable(password string) (err error) {
+func (c *casa) Enable(password string) (err error) {
 	return nil
 }
 
-func (c *cisco) Write(command string, newline bool) (int, error) {
+func (c *casa) Write(command string, newline bool) (int, error) {
 	if newline {
 		command += "\r"
 	}
 	return c.stdin.Write([]byte(command))
 }
 
-func (c *cisco) WriteCapture(command string) (result []string, err error) {
+func (c *casa) WriteCapture(command string) (result []string, err error) {
 	return c.WriteExpect(command, c.prompt)
 }
 
-func (c *cisco) WriteExpect(command string, expectation *regexp.Regexp) (result []string, err error) {
+func (c *casa) WriteExpect(command string, expectation *regexp.Regexp) (result []string, err error) {
 	if !c.ready {
 		return result, errors.New("Device not ready to send another write command that requires capturing.")
 	}
@@ -175,17 +175,17 @@ func (c *cisco) WriteExpect(command string, expectation *regexp.Regexp) (result 
 		"shouldn't happen.")
 }
 
-func (c *cisco) match(line string, reg *regexp.Regexp) bool {
+func (c *casa) match(line string, reg *regexp.Regexp) bool {
 	return reg.Find([]byte(line)) != nil
 }
 
 // Options should return the connection options used for the current connection, if any
-func (c *cisco) Options() schema.ConnectOptions {
+func (c *casa) Options() schema.ConnectOptions {
 	runtime.Gosched()
 	return c.connOptions
 }
 
-func (c *cisco) handleContinuation(line string) {
+func (c *casa) handleContinuation(line string) {
 	for _, con := range c.continuation {
 		if matched := con.Find([]byte(line)); matched != nil {
 			// send enter key, bypassing the normal Write logic

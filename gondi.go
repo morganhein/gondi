@@ -3,8 +3,8 @@ package gondi
 import (
 	"errors"
 
-	"github.com/morganhein/gondi/transport"
 	"github.com/morganhein/gondi/schema"
+	"github.com/morganhein/gondi/transport"
 )
 
 type Manager struct {
