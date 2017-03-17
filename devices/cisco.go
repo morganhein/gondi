@@ -42,7 +42,7 @@ func (c *cisco) Initialize() error {
 		}
 	}
 	c.ready = false
-	c.timeout = 8
+	c.timeout = 800
 	return nil
 }
 

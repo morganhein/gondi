@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -58,7 +59,8 @@ func main() {
 		if err != nil {
 			fmt.Printf("%s\n", err.Error())
 		} else {
-			fmt.Println(ret)
+			b, _ := json.MarshalIndent(ret, "", "  ")
+			println(string(b))
 		}
 
 		fmt.Println("Exiting.")
