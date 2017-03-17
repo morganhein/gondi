@@ -6,6 +6,9 @@ import (
 
 const (
 	Cisco = iota
+	Juniper
+	Casa
+	Adva
 )
 
 const (
@@ -16,6 +19,13 @@ const (
 func New(deviceType byte) schema.Device {
 	switch deviceType {
 	case Cisco:
+		d := &cisco{}
+		err := d.Initialize()
+		if err != nil {
+			return nil
+		}
+		return d
+	case Casa:
 		d := &casa{}
 		err := d.Initialize()
 		if err != nil {
@@ -23,7 +33,7 @@ func New(deviceType byte) schema.Device {
 		}
 		return d
 	default:
-		d := &casa{}
+		d := &cisco{}
 		err := d.Initialize()
 		if err != nil {
 			return nil
