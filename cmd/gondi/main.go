@@ -63,6 +63,15 @@ func main() {
 			println(string(b))
 		}
 
+		ret, err = dev.WriteCapture("show alias")
+		fmt.Println("\n\nResult:")
+		if err != nil {
+			fmt.Printf("%s\n", err.Error())
+		} else {
+			b, _ := json.MarshalIndent(ret, "", "  ")
+			println(string(b))
+		}
+
 		fmt.Println("Exiting.")
 		dev.Disconnect()
 	}
