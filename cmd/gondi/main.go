@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/morganhein/gondi"
-	"github.com/morganhein/gondi/devices"
+	"github.com/morganhein/gondi/transport"
 	"github.com/morganhein/gondi/schema"
 )
 
@@ -39,7 +39,7 @@ func main() {
 		if err != nil {
 			fmt.Printf("Error converting the port to an integer: %s", err)
 		}
-		dev, err := g.Connect(devices.Cisco, row[0], byte(t), schema.ConnectOptions{
+		dev, err := g.Connect(transport.Cisco, row[0], byte(t), schema.ConnectOptions{
 			Host:           row[2],
 			Port:           p,
 			Username:       row[4],

@@ -1,4 +1,4 @@
-package devices
+package transport
 
 import (
 	"github.com/morganhein/gondi/schema"
