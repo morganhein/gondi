@@ -38,7 +38,7 @@ type Device interface {
 	//Connect tries to connect using the devices connection options, and optional arguments
 	Connect(method byte, options ConnectOptions, args ...string) error
 	//Disconnect closes the sessions and removes all references to it in the devices module
-	Disconnect()
+	Disconnect() bool
 	//Enable tries to enter "enable mode" on the device
 	Enable(password string) (err error)
 	//Write sends the command on the wire, optionally with a return character at the end

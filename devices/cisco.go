@@ -11,7 +11,8 @@ import (
 	"github.com/morganhein/gondi/pubsub"
 	"github.com/morganhein/gondi/schema"
 	"golang.org/x/crypto/ssh"
-	"os"
+	//"os"
+	"sync"
 )
 
 type cisco struct {
@@ -28,7 +29,8 @@ type cisco struct {
 	prompt       *regexp.Regexp
 	events       chan schema.MessageEvent
 	publisher    *pubsub.Publisher
-	timeout      int // The default timeout for this device
+	timeout      int            // The default timeout for this device
+	attachWg     sync.WaitGroup // The waitgroup for the publisher attachment
 }
 
 func (c *cisco) Initialize() error {
@@ -74,8 +76,8 @@ func (c *cisco) connectSsh(options schema.ConnectOptions) error {
 	c.stderr, _ = c.session.StderrPipe()
 
 	c.shutdown = make(chan bool, 1)
-	go io.Copy(os.Stdout, c.stdout)
-	go c.publisher.Attach(c.stdout, c.stderr, c.shutdown)
+	c.attachWg = sync.WaitGroup{}
+	go c.publisher.Attach(c.stdout, c.stderr, c.shutdown, c.attachWg)
 
 	modes := ssh.TerminalModes{
 		ssh.ECHO:          0,     // disable echoing
@@ -99,10 +101,12 @@ func (c *cisco) connectSsh(options schema.ConnectOptions) error {
 	return nil
 }
 
-func (c *cisco) Disconnect() {
+func (c *cisco) Disconnect() bool {
 	c.stdin.Close()
 	c.session.Close()
 	c.shutdown <- true
+	c.attachWg.Wait()
+	return true
 }
 
 func (c *cisco) Enable(password string) (err error) {
@@ -156,6 +160,7 @@ func (c *cisco) WriteExpect(command string, expectation *regexp.Regexp) (result 
 			if event.Dir == schema.Stdout {
 				result = append(result, event.Message)
 				if found := c.match(event.Message, expectation); found {
+					fmt.Println("Expectation matched.")
 					return result, nil
 				}
 			}

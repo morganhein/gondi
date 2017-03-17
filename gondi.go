@@ -44,7 +44,7 @@ func (m *Manager) GetDevice(id string) (device schema.Device, err error) {
 
 func (m *Manager) Shutdown() error {
 	for _, d := range m.devices {
-		d.Disconnect()
+		_ = d.Disconnect()
 	}
 	return nil
 }

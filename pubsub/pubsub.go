@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/morganhein/gondi/schema"
@@ -14,29 +15,39 @@ type Publisher struct {
 	device schema.Device
 	input  chan schema.MessageEvent
 	s      map[int]chan schema.MessageEvent
+	mut    sync.RWMutex
 }
 
 type subscriber struct {
-	s map[int]chan schema.MessageEvent
+	s   map[int]chan schema.MessageEvent
+	mut sync.RWMutex
 }
 
 var sub subscriber
 
 func init() {
 	sub = subscriber{
-		s: make(map[int]chan schema.MessageEvent, 2),
+		s:   make(map[int]chan schema.MessageEvent, 2),
+		mut: sync.RWMutex{},
 	}
 }
 
+// New creates a new pubsub. This should be called from a device.
+// Then Attach() can be called to begin publishing.
 func New(device schema.Device, input chan schema.MessageEvent) *Publisher {
 	return &Publisher{
 		device: device,
 		input:  input,
 		s:      make(map[int]chan schema.MessageEvent, 2),
+		mut:    sync.RWMutex{},
 	}
 }
 
+// Subscribe adds another listener to this pubsub, messages to be passed via the channel
+// The id of this subscription is returned, which may be used to unsubscribe
 func (p *Publisher) Subscribe(s chan schema.MessageEvent) (id int) {
+	p.mut.Lock()
+	defer p.mut.Unlock()
 	next := 0
 	//create a slice of the keys
 	keys := make([]int, len(p.s))
@@ -58,94 +69,89 @@ func (p *Publisher) Subscribe(s chan schema.MessageEvent) (id int) {
 }
 
 func (p *Publisher) Unsubscribe(id int) {
+	p.mut.Lock()
+	defer p.mut.Unlock()
 	if _, ok := p.s[id]; ok {
 		delete(p.s, id)
 	}
 }
 
-func (p *Publisher) Attach(stdout, stderr io.Reader, shutdown chan bool) {
+// Attach creates the listeners for stdout and stderr,
+// and begins the publisher to distribute the messages to all subs.
+func (p *Publisher) Attach(stdout, stderr io.Reader, shutdown chan bool, wg sync.WaitGroup) {
 	fmt.Println("Device attached to publisher.")
-	var stdoutShutdown chan bool
-	var stderrShutdown chan bool
+	wg.Add(1)
+	defer wg.Done()
 	if stdout != nil {
-		stdoutShutdown = make(chan bool, 1)
-		go attachReader(p.device, stdout, schema.Stdout, p.input, stdoutShutdown)
+		go attachReader(p.device, stdout, schema.Stdout, p.input)
 	}
 	if stderr != nil {
-		stderrShutdown = make(chan bool, 1)
-		go attachReader(p.device, stderr, schema.Stderr, p.input, stderrShutdown)
+		go attachReader(p.device, stderr, schema.Stderr, p.input)
 	}
-	dispatchShutdown := make(chan bool, 1)
-	go p.publish(dispatchShutdown)
+	loopCancel := make(chan bool, 1)
+	loopWg := sync.WaitGroup{}
+	go p.start(loopCancel, loopWg)
 	for {
 		select {
 		case <-shutdown:
-			if stdout != nil {
-				stdoutShutdown <- true
-			}
-			if stderr != nil {
-				stderrShutdown <- true
-			}
-			dispatchShutdown <- true
+			loopCancel <- true
 			break
 		}
 	}
+	wg.Wait()
 	fmt.Println("Device un-attached.")
 }
 
-func (p *Publisher) publish(shutdown chan bool) {
+func (p *Publisher) start(shutdown chan bool, wg sync.WaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
 	for {
 		select {
 		case <-shutdown:
 			break
 		case line := <-p.input:
 			// Send to the locally subscribed listeners (probably just the device)
+			p.mut.RLock()
 			for _, s := range p.s {
 				if len(s) < 20 {
 					s <- line
 				}
 			}
+			p.mut.RUnlock()
+			sub.mut.RLock()
 			// Send to the externally subscribed listeners
 			for _, s := range sub.s {
 				if len(s) < 20 {
 					s <- line
 				}
 			}
+			sub.mut.RUnlock()
 		}
+		time.Sleep(time.Duration(30) * time.Millisecond)
 	}
 }
 
-func attachReader(device schema.Device, io io.Reader, t schema.EventType, output chan schema.MessageEvent,
-	shutdown chan bool) {
-	fmt.Printf("Reader of type %v attached to io.\n", t)
-	scanner := bufio.NewReader(io)
-	for {
-		select {
-		case <-shutdown:
-			break
-		default:
-			if scanner.Buffered() > 0 {
-				line, err := scanner.ReadString('\n')
-				if err != nil {
-					fmt.Printf("Encountered an error when trying to read the next line: %v", err.Error())
-					continue
-				}
-				e := schema.MessageEvent{
-					Source:  device,
-					Message: line,
-					Dir:     t,
-					Time:    time.Now(),
-				}
-				output <- e
-				fmt.Println(e.Message)
-			}
+func attachReader(device schema.Device, r io.Reader, t schema.EventType, output chan schema.MessageEvent) {
+	fmt.Printf("Reader of type %v attached to r.\n", t)
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := scanner.Text()
+		e := schema.MessageEvent{
+			Source:  device,
+			Message: line,
+			Dir:     t,
+			Time:    time.Now(),
 		}
-
+		fmt.Println(e.Message)
+		output <- e
 	}
 }
 
-// Subscribe adds a listener for all dispatchers
+// Subscribe adds a listener for all dispatchers.
+// This will be used for third party logging
 func Subscribe(s chan schema.MessageEvent) (id int) {
+	sub.mut.Lock()
+	defer sub.mut.Unlock()
 	next := 0
 	//create a slice of the keys
 	keys := make([]int, len(sub.s))
