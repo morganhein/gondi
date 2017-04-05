@@ -49,19 +49,19 @@ func (c *casa) Initialize() error {
 		}
 	}
 	c.ready = false
-	c.timeout = time.Duration(8) * time.Second
+	c.timeout = time.Duration(30) * time.Second
 	return nil
 }
 
 func (c *casa) Connect(method schema.ConnectionMethod, options schema.ConnectOptions, args ...string) error {
 	if method == SSH {
 		options.Method = SSH
-		fmt.Println("Casa: connecting via SSH.")
+		log.Debug("Casa: connecting via SSH.")
 		return c.connectSsh(options)
 	}
 	if method == Telnet {
 		options.Method = Telnet
-		fmt.Println("Casa: connecting via Telnet.")
+		log.Debug("Casa: connecting via Telnet.")
 		return c.connectTelnet(options)
 	}
 	return errors.New("That connection type is currently not supported for this device.")
@@ -75,7 +75,7 @@ func (c *casa) connectSsh(options schema.ConnectOptions) error {
 	c.ssh.Config = CreateSSHConfig(options)
 	c.connOptions.Method = SSH
 	host := fmt.Sprint(options.Host, ":", options.Port)
-	fmt.Println("Dialing ", host)
+	log.Debug("Dialing ", host)
 	conn, err := ssh.Dial("tcp", host, c.ssh.Config)
 	if err != nil {
 		return fmt.Errorf("Failed to dial: %s", err)
@@ -83,7 +83,7 @@ func (c *casa) connectSsh(options schema.ConnectOptions) error {
 	c.ssh.connection = conn
 	c.ssh.session, err = c.ssh.connection.NewSession()
 	if err != nil {
-		fmt.Errorf("Failed to create session: %s", err)
+		return fmt.Errorf("Failed to create session: %s", err)
 	}
 	c.stdin, _ = c.ssh.session.StdinPipe()
 	c.stdout, _ = c.ssh.session.StdoutPipe()
@@ -110,8 +110,8 @@ func (c *casa) connectSsh(options schema.ConnectOptions) error {
 		return fmt.Errorf("Failed to start shell: %s", err)
 	}
 	c.connOptions = options
-	fmt.Println("Secure shell session created.")
-	fmt.Println("Setting terminal length.")
+	log.Info("SSH session created.")
+	log.Debug("Setting terminal length.")
 	c.stdin.Write([]byte("page-off\r"))
 	c.ready = true
 	return nil
@@ -130,11 +130,11 @@ func (c *casa) connectTelnet(options schema.ConnectOptions) (err error) {
 
 	c.telnet.conn, err = gote.Dial("tcp", host)
 	if err != nil {
-		fmt.Println(err)
+		log.Info(err)
 		return err
 	}
 
-	fmt.Println("TCP Connected, trying to login.")
+	log.Debug("TCP Connected, trying to login.")
 
 	c.stdout = c.telnet.conn
 	c.stdin = c.telnet.conn
@@ -143,17 +143,17 @@ func (c *casa) connectTelnet(options schema.ConnectOptions) (err error) {
 
 	ready, err := c.loginTelnet(options.Username, options.Password)
 	if err != nil {
-		fmt.Println("unable to login to telnet using username/password combination.")
+		log.Warningf("Unable to login to telnet using username/password combination.")
 		return err
 	}
 
 	if !ready {
-		fmt.Println("Unable to login to telnet, device is not ready.")
+		log.Warning("Unable to login to telnet, device is not ready.")
 		return errors.New("Device not ready.")
 	}
 
-	fmt.Println("Logged in to telnet. Connection ready.")
-	fmt.Println("Setting terminal length.")
+	log.Info("Telnet session created.")
+	log.Debug("Setting terminal length.")
 	c.stdin.Write([]byte("page-off\r"))
 	c.ready = true
 	// need to login now
@@ -239,13 +239,13 @@ func (c *casa) writeExpectTimeout(command string, expectation *regexp.Regexp,
 
 	defer func() {
 		c.ready = true
-		fmt.Println("Defer unsubscribe being called.")
+		log.Debug("Defer unsubscribe being called.")
 		c.publisher.Unsubscribe(id)
 	}()
 
 	if len(command) > 0 {
 		// write the command
-		fmt.Println("Writing command: ", string(command))
+		log.Debug("Writing command: ", string(command))
 		_, err = c.Write(command, true)
 		if err != nil {
 			// Unable to write command
@@ -265,7 +265,7 @@ func (c *casa) expect(events chan schema.MessageEvent, expectation *regexp.Regex
 			if event.Dir == schema.Stdout {
 				result = append(result, event.Message)
 				if found := c.match(event.Message, expectation); found {
-					fmt.Println("Expectation matched.")
+					log.Debug("Expectation matched.")
 					return result, nil
 				}
 			}
@@ -295,7 +295,7 @@ func (c *casa) Options() schema.ConnectOptions {
 func (c *casa) handleContinuation(line string) {
 	for _, con := range c.continuation {
 		if matched := con.Find([]byte(line)); matched != nil {
-			fmt.Println("Found continuation request.", string(matched))
+			log.Debug("Found continuation request.", string(matched))
 			c.Write(" ", true)
 		}
 	}

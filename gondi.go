@@ -3,7 +3,7 @@ package gondi
 import (
 	"errors"
 
-	"fmt"
+	"github.com/morganhein/gondi/logger"
 	"github.com/morganhein/gondi/schema"
 	"github.com/morganhein/gondi/transport"
 )
@@ -11,12 +11,14 @@ import (
 type Manager struct {
 	devices      map[string]schema.Device
 	dispatchQuit chan bool
+	log          schema.Logger
 }
 
 func NewG() *Manager {
 	g := &Manager{
 		devices:      make(map[string]schema.Device),
 		dispatchQuit: make(chan bool, 1),
+		log:          logger.Log,
 	}
 	return g
 }
@@ -26,7 +28,7 @@ func NewG() *Manager {
 func (m *Manager) Connect(deviceType schema.DeviceType, id string, method schema.ConnectionMethod,
 	options schema.ConnectOptions) (schema.Device, error) {
 	device := transport.New(deviceType)
-	fmt.Println("Trying to connect from Manager.")
+	m.log.Info("Trying to connect from Manager.")
 
 	for _, supported := range device.SupportedMethods() {
 		if supported == method {

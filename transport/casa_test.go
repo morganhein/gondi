@@ -49,7 +49,7 @@ func TestCasa_LoginTelnet(t *testing.T) {
 	i, err := conn.Read(buf)
 	assert.NoError(t, err)
 	if i != 0 {
-		fmt.Println("Server: Login found: ", buf)
+		fmt.Println("Server: Login found: ", string(buf[:i]))
 	}
 	conn.Write([]byte("Password:\n"))
 

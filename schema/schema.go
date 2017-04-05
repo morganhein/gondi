@@ -61,3 +61,14 @@ type Configuration interface {
 	Enable(password string) (err error)
 	Show(option string) (response string, err error)
 }
+
+type Logger interface {
+	Debug(args ...interface{})
+	Debugf(format string, args ...interface{})
+	Info(args ...interface{})
+	Infof(format string, args ...interface{})
+	Warning(args ...interface{})
+	Warningf(format string, args ...interface{})
+	Critical(args ...interface{})
+	Criticalf(format string, args ...interface{})
+}

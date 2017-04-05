@@ -3,22 +3,24 @@ package main
 import (
 	"encoding/csv"
 	"encoding/json"
-	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"time"
 
 	"github.com/morganhein/gondi"
+	"github.com/morganhein/gondi/logger"
 	"github.com/morganhein/gondi/schema"
 )
 
 func main() {
+	log := logger.Log
+
 	cwd, _ := os.Getwd()
-	fmt.Printf("Current %s\n", cwd)
+	log.Debugf("Current %s\n", cwd)
 	csvfile, err := os.Open("devices.csv")
 	if err != nil {
-		log.Panicf("Unable to open the devices.csv file: %s", err.Error())
+		log.Criticalf("Unable to open the devices.csv file: %s. No devices loaded, exiting.", err.Error())
+		os.Exit(1)
 	}
 	defer csvfile.Close()
 	options := csv.NewReader(csvfile)
@@ -26,23 +28,26 @@ func main() {
 	g := gondi.NewG()
 	rows, err := options.ReadAll()
 	if err != nil {
-		fmt.Printf("Cannot load devices from csv file: %s", err.Error())
+		log.Criticalf("Cannot load devices from csv file: %s. No devices loaded, exiting.", err.Error())
+		os.Exit(1)
 	}
 
 	for _, row := range rows {
-		fmt.Println(row)
+		log.Info(row)
 		d, err := strconv.Atoi(row[1])
 		if err != nil {
-			fmt.Printf("Error converting devicetype to an integer: %s", err)
+			log.Warningf("Error converting devicetype to an integer: %s. Skipping.", err)
+			continue
 		}
-		fmt.Println(schema.DeviceType(d))
 		t, err := strconv.Atoi(row[2])
 		if err != nil {
-			fmt.Printf("Error converting the method type to an integer: %s", err)
+			log.Warningf("Error converting the method type to an integer: %s. Skipping.", err)
+			continue
 		}
 		p, err := strconv.Atoi(row[4])
 		if err != nil {
-			fmt.Printf("Error converting the port to an integer: %s", err)
+			log.Warningf("Error converting the port to an integer: %s. Skipping.", err)
+			continue
 		}
 		opt := schema.ConnectOptions{
 			Host:           row[3],
@@ -51,23 +56,22 @@ func main() {
 			Password:       row[6],
 			EnablePassword: row[7],
 		}
-		fmt.Printf("%s\n", opt)
 		dev, err := g.Connect(schema.DeviceType(d), row[0], schema.ConnectionMethod(t), opt)
 
 		if err != nil {
-			fmt.Printf("Cannot connect to device due to: %s", err.Error())
-			os.Exit(1)
+			log.Warningf("Cannot connect to device due to: %s. Skipping.", err.Error())
+			continue
 		}
 
-		fmt.Println("Successfully connected to device.")
+		log.Debug("Successfully connected to device.")
 		time.Sleep(time.Duration(1) * time.Second)
 		ret, err := dev.WriteCapture("show run")
-		fmt.Println("\n\nResult:")
 		if err != nil {
-			fmt.Printf("%s\n", err.Error())
+			log.Warningf("%s\n", err.Error())
+			continue
 		}
 		b, _ := json.MarshalIndent(ret, "", "  ")
-		println(string(b))
+		log.Info("\nResult: ", string(b))
 		dev.Disconnect()
 	}
 	g.Shutdown()

@@ -83,7 +83,7 @@ func (c *cisco) connectSsh(options schema.ConnectOptions) error {
 	}
 	c.connOptions.Method = SSH
 	host := fmt.Sprint(options.Host, ":", options.Port)
-	fmt.Println(c.ssh.Config.Ciphers)
+	log.Info(c.ssh.Config.Ciphers)
 	conn, err := ssh.Dial("tcp", host, c.ssh.Config)
 	if err != nil {
 		return fmt.Errorf("Failed to dial: %s", err)
@@ -118,9 +118,9 @@ func (c *cisco) connectSsh(options schema.ConnectOptions) error {
 		return fmt.Errorf("Failed to start shell: %s", err)
 	}
 	c.connOptions = options
-	fmt.Println("Secure shell session created.")
+	log.Info("SSH session created.")
 	// brute set terminal length 0. Could be configured to detect type and send the correct line.
-	fmt.Println("Setting terminal length.")
+	log.Debug("Setting terminal length.")
 	c.stdin.Write([]byte("terminal length 0\r"))
 	c.stdin.Write([]byte("set length 0\r"))
 	c.ready = true
@@ -140,11 +140,11 @@ func (c *cisco) connectTelnet(options schema.ConnectOptions) (err error) {
 
 	c.telnet.conn, err = gote.Dial("tcp", host)
 	if err != nil {
-		fmt.Println(err)
+		log.Info(err)
 		return err
 	}
 
-	fmt.Println("TCP Connected, trying to login.")
+	log.Debug("TCP Connected, trying to login.")
 
 	c.stdout = c.telnet.conn
 	c.stdin = c.telnet.conn
@@ -153,18 +153,18 @@ func (c *cisco) connectTelnet(options schema.ConnectOptions) (err error) {
 
 	ready, err := c.loginTelnet(options.Username, options.Password)
 	if err != nil {
-		fmt.Println("unable to login to telnet using username/password combination.")
+		log.Warning("Unable to login to telnet using username/password combination.")
 		return err
 	}
 
 	if !ready {
-		fmt.Println("Unable to login to telnet, device is not ready.")
+		log.Warning("Unable to login to telnet, device is not ready.")
 		return errors.New("Device not ready.")
 	}
 
-	fmt.Println("Logged in to telnet. Connection ready.")
+	log.Info("Telnet session created.")
 	// brute set terminal length 0. Could be configured to detect type and send the correct line.
-	fmt.Println("Setting terminal length.")
+	log.Debug("Setting terminal length.")
 	c.stdin.Write([]byte("terminal length 0\r"))
 	c.stdin.Write([]byte("set length 0\r"))
 	c.ready = true
@@ -256,7 +256,7 @@ func (c *cisco) writeExpectTimeout(command string, expectation *regexp.Regexp,
 
 	if len(command) > 0 {
 		// write the command
-		fmt.Println("Writing command: ", string(command))
+		log.Debug("Writing command: ", string(command))
 		_, err = c.Write(command, true)
 		if err != nil {
 			// Unable to write command
@@ -276,7 +276,7 @@ func (c *cisco) expect(events chan schema.MessageEvent, expectation *regexp.Rege
 			if event.Dir == schema.Stdout {
 				result = append(result, event.Message)
 				if found := c.match(event.Message, expectation); found {
-					fmt.Println("Expectation matched.")
+					log.Debug("Expectation matched.")
 					return result, nil
 				}
 			}
@@ -306,7 +306,7 @@ func (c *cisco) Options() schema.ConnectOptions {
 func (c *cisco) handleContinuation(line string) {
 	for _, con := range c.continuation {
 		if matched := con.Find([]byte(line)); matched != nil {
-			fmt.Println("Found continuation request.")
+			log.Debug("Found continuation request.")
 			c.Write(" ", true)
 		}
 	}

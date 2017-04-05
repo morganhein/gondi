@@ -2,14 +2,16 @@ package pubsub
 
 import (
 	"bufio"
-	"fmt"
 	"io"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/morganhein/gondi/logger"
 	"github.com/morganhein/gondi/schema"
 )
+
+var log schema.Logger
 
 type Publisher struct {
 	device schema.Device
@@ -26,6 +28,7 @@ type subscriber struct {
 var sub subscriber
 
 func init() {
+	log = logger.Log
 	sub = subscriber{
 		s:   make(map[int]chan schema.MessageEvent, 2),
 		mut: sync.RWMutex{},
@@ -65,12 +68,12 @@ func (p *Publisher) Subscribe(s chan schema.MessageEvent) (id int) {
 	}
 	//Add the sub to the map with the next id in order
 	p.s[next] = s
-	fmt.Println("Subscribing from id", next, p)
+	log.Debug("Subscribing from id", next)
 	return next
 }
 
 func (p *Publisher) Unsubscribe(id int) {
-	fmt.Println("Unsubscribing from id", id, p)
+	log.Debug("Unsubscribing from id", id)
 	p.mut.Lock()
 	defer p.mut.Unlock()
 	if _, ok := p.s[id]; ok {
@@ -81,7 +84,7 @@ func (p *Publisher) Unsubscribe(id int) {
 // Attach creates the listeners for stdout and stderr,
 // and begins the publisher to distribute the messages to all subs.
 func (p *Publisher) Attach(stdout, stderr io.Reader, shutdown chan bool, wg sync.WaitGroup) {
-	//fmt.Println("Device attached to publisher.")
+	//log.Info()("Device attached to publisher.")
 	wg.Add(1)
 	defer wg.Done()
 	qstdout := make(chan bool, 1)
@@ -105,7 +108,7 @@ func (p *Publisher) Attach(stdout, stderr io.Reader, shutdown chan bool, wg sync
 		}
 	}
 	wg.Wait()
-	fmt.Println("Device un-attached.")
+	log.Debug("Device un-attached.")
 }
 
 func (p *Publisher) start(shutdown chan bool, wg sync.WaitGroup) {
@@ -159,14 +162,14 @@ func attachReader(device schema.Device, r io.Reader, t schema.EventType, output 
 				Dir:     t,
 				Time:    time.Now(),
 			}
-			//fmt.Println("Pubsub received: ", e.Message)
+			//log.Debug("Pubsub received: ", e.Message)
 			output <- e
 		} else {
-			fmt.Println("Scanning stopped, this shouldn't of occurred.")
+			log.Warning("Scanning stopped, this error means a memory leak may be occurring.")
 		}
 		select {
 		case <-stop:
-			fmt.Println("Reader loop closing.")
+			log.Debug("Reader loop closing.")
 			return
 		default:
 		}

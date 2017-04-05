@@ -1,12 +1,14 @@
 package transport
 
 import (
-	"fmt"
+	"github.com/morganhein/gondi/logger"
 	"github.com/morganhein/gondi/schema"
 )
 
 const (
 	Cisco schema.DeviceType = iota
+	CiscoXE
+	CiscoXR
 	Casa
 	Juniper
 	Adva
@@ -18,10 +20,17 @@ const (
 	Telnet
 )
 
+var log schema.Logger
+
+func init() {
+	log = logger.Log
+}
+
 func New(deviceType schema.DeviceType) schema.Device {
+	log := logger.Log
 	switch deviceType {
 	case Cisco:
-		fmt.Println("Cisco device.")
+		log.Debug("Creating a new Cisco device.")
 		d := &cisco{}
 		err := d.Initialize()
 		if err != nil {
@@ -29,7 +38,7 @@ func New(deviceType schema.DeviceType) schema.Device {
 		}
 		return d
 	case Casa:
-		fmt.Println("Casa device.")
+		log.Debug("Creating a new Casa device.")
 		d := &casa{}
 		err := d.Initialize()
 		if err != nil {
@@ -37,7 +46,7 @@ func New(deviceType schema.DeviceType) schema.Device {
 		}
 		return d
 	case Juniper:
-		fmt.Println("Juniper device.")
+		log.Debug("Creating a new Juniper device.")
 		d := &juniper{}
 		err := d.Initialize()
 		if err != nil {
@@ -45,7 +54,7 @@ func New(deviceType schema.DeviceType) schema.Device {
 		}
 		return d
 	default:
-		fmt.Println("Unknown device requested, making a Cisco device.")
+		log.Debug("Unknown device requested, making a Cisco device.")
 		d := &cisco{}
 		err := d.Initialize()
 		if err != nil {
