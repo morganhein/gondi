@@ -11,7 +11,6 @@ import (
 
 	"github.com/morganhein/gondi"
 	"github.com/morganhein/gondi/schema"
-	"github.com/morganhein/gondi/transport"
 )
 
 func main() {
@@ -31,21 +30,29 @@ func main() {
 	}
 
 	for _, row := range rows {
-		t, err := strconv.Atoi(row[1])
+		fmt.Println(row)
+		d, err := strconv.Atoi(row[1])
+		if err != nil {
+			fmt.Printf("Error converting devicetype to an integer: %s", err)
+		}
+		fmt.Println(schema.DeviceType(d))
+		t, err := strconv.Atoi(row[2])
 		if err != nil {
 			fmt.Printf("Error converting the method type to an integer: %s", err)
 		}
-		p, err := strconv.Atoi(row[3])
+		p, err := strconv.Atoi(row[4])
 		if err != nil {
 			fmt.Printf("Error converting the port to an integer: %s", err)
 		}
-		dev, err := g.Connect(transport.Casa, row[0], byte(t), schema.ConnectOptions{
-			Host:           row[2],
+		opt := schema.ConnectOptions{
+			Host:           row[3],
 			Port:           p,
-			Username:       row[4],
-			Password:       row[5],
-			EnablePassword: row[6],
-		})
+			Username:       row[5],
+			Password:       row[6],
+			EnablePassword: row[7],
+		}
+		fmt.Printf("%s\n", opt)
+		dev, err := g.Connect(schema.DeviceType(d), row[0], schema.ConnectionMethod(t), opt)
 
 		if err != nil {
 			fmt.Printf("Cannot connect to device due to: %s", err.Error())
@@ -61,17 +68,6 @@ func main() {
 		}
 		b, _ := json.MarshalIndent(ret, "", "  ")
 		println(string(b))
-
-		//ret, err = dev.WriteCapture("show alias")
-		//fmt.Println("\n\nResult:")
-		//if err != nil {
-		//	fmt.Printf("%s\n", err.Error())
-		//} else {
-		//	b, _ := json.MarshalIndent(ret, "", "  ")
-		//	println(string(b))
-		//}
-		//
-		//fmt.Println("Exiting.")
 		dev.Disconnect()
 	}
 	g.Shutdown()
