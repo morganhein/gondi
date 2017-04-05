@@ -10,6 +10,7 @@ const (
 	Casa
 	Juniper
 	Adva
+	IronFoundry
 )
 
 const (
@@ -35,8 +36,16 @@ func New(deviceType schema.DeviceType) schema.Device {
 			return nil
 		}
 		return d
+	case Juniper:
+		fmt.Println("Juniper device.")
+		d := &juniper{}
+		err := d.Initialize()
+		if err != nil {
+			return nil
+		}
+		return d
 	default:
-		fmt.Println("Cisco device.")
+		fmt.Println("Unknown device requested, making a Cisco device.")
 		d := &cisco{}
 		err := d.Initialize()
 		if err != nil {
