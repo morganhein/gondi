@@ -4,21 +4,28 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"regexp"
 	"runtime"
 	"sync"
 	"time"
 
+	"github.com/morganhein/go-telnet"
 	"github.com/morganhein/gondi/pubsub"
 	"github.com/morganhein/gondi/schema"
 	"golang.org/x/crypto/ssh"
 )
 
 type cisco struct {
+	ssh struct {
+		Config     *ssh.ClientConfig
+		connection *ssh.Client
+		session    *ssh.Session
+	}
+	telnet struct {
+		conn net.Conn
+	}
 	connOptions  schema.ConnectOptions
-	sshConfig    *ssh.ClientConfig
-	connection   *ssh.Client
-	session      *ssh.Session
 	ready        bool //set to false when running a command
 	stdout       io.Reader
 	stdin        io.WriteCloser
@@ -28,7 +35,7 @@ type cisco struct {
 	prompt       *regexp.Regexp
 	events       chan schema.MessageEvent
 	publisher    *pubsub.Publisher
-	timeout      int            // The default timeout for this device
+	timeout      time.Duration  // The default timeout for this device
 	attachWg     sync.WaitGroup // The waitgroup for the publisher attachment
 }
 
@@ -36,43 +43,59 @@ func (c *cisco) Initialize() error {
 	c.events = make(chan schema.MessageEvent, 20)
 	c.publisher = pubsub.New(c, c.events)
 	c.prompt, _ = regexp.Compile(`> *$|# *$|\$ *$`)
-	for _, next := range []string{"^--more--$", ``} {
+	for _, next := range []string{`^.*?--More-- $`} {
 		if re, err := regexp.Compile(next); err == nil {
 			c.continuation = append(c.continuation, re)
 		}
 	}
 	c.ready = false
-	c.timeout = 800
+	c.timeout = time.Duration(8) * time.Second
 	return nil
 }
 
-func (c *cisco) Connect(method byte, options schema.ConnectOptions, args ...string) error {
-	if method != SSH {
-		return errors.New("That connection type is currently not supported for this device.")
+func (c *cisco) Connect(method schema.ConnectionMethod, options schema.ConnectOptions, args ...string) error {
+	if method == SSH {
+		options.Method = SSH
+		return c.connectSsh(options)
 	}
-	return c.connectSsh(options)
+	if method == Telnet {
+		options.Method = Telnet
+		return c.connectTelnet(options)
+	}
+	return errors.New("That connection type is currently not supported for this device.")
 }
 
-func (c *cisco) SupportedMethods() []byte {
-	return []byte{SSH}
+func (c *cisco) SupportedMethods() []schema.ConnectionMethod {
+	return []schema.ConnectionMethod{SSH, Telnet}
 }
 
 func (c *cisco) connectSsh(options schema.ConnectOptions) error {
-	c.sshConfig = CreateSSHConfig(options)
+	c.ssh.Config = CreateSSHConfig(options)
+	c.ssh.Config.Ciphers = []string{
+		"aes128-cbc",
+		"aes256-cbc",
+		"aes128-ctr",
+		"aes192-ctr",
+		"aes256-ctr",
+		"aes128-gcm@openssh.com",
+		"arcfour256",
+		"arcfour128",
+	}
 	c.connOptions.Method = SSH
 	host := fmt.Sprint(options.Host, ":", options.Port)
-	conn, err := ssh.Dial("tcp", host, c.sshConfig)
+	fmt.Println(c.ssh.Config.Ciphers)
+	conn, err := ssh.Dial("tcp", host, c.ssh.Config)
 	if err != nil {
 		return fmt.Errorf("Failed to dial: %s", err)
 	}
-	c.connection = conn
-	c.session, err = c.connection.NewSession()
+	c.ssh.connection = conn
+	c.ssh.session, err = c.ssh.connection.NewSession()
 	if err != nil {
 		fmt.Errorf("Failed to create session: %s", err)
 	}
-	c.stdin, _ = c.session.StdinPipe()
-	c.stdout, _ = c.session.StdoutPipe()
-	c.stderr, _ = c.session.StderrPipe()
+	c.stdin, _ = c.ssh.session.StdinPipe()
+	c.stdout, _ = c.ssh.session.StdoutPipe()
+	c.stderr, _ = c.ssh.session.StderrPipe()
 
 	c.shutdown = make(chan bool, 1)
 	c.attachWg = sync.WaitGroup{}
@@ -85,24 +108,105 @@ func (c *cisco) connectSsh(options schema.ConnectOptions) error {
 	}
 
 	// Request PTY
-	if err := c.session.RequestPty("xterm", 80, 40, modes); err != nil {
-		c.session.Close()
+	if err := c.ssh.session.RequestPty("xterm", 100, 100, modes); err != nil {
+		c.ssh.session.Close()
 		return fmt.Errorf("Request for pseudo terminal failed: %s", err)
 	}
 
 	// Start remote shell
-	if err := c.session.Shell(); err != nil {
+	if err := c.ssh.session.Shell(); err != nil {
 		return fmt.Errorf("Failed to start shell: %s", err)
 	}
 	c.connOptions = options
 	fmt.Println("Secure shell session created.")
+	// brute set terminal length 0. Could be configured to detect type and send the correct line.
+	fmt.Println("Setting terminal length.")
+	c.stdin.Write([]byte("terminal length 0\r"))
+	c.stdin.Write([]byte("set length 0\r"))
 	c.ready = true
 	return nil
 }
 
+func (c *cisco) connectTelnet(options schema.ConnectOptions) (err error) {
+	c.connOptions = options
+	if c.connOptions.Port == 0 {
+		c.connOptions.Port = 23
+	}
+	// connect to the host
+	host := fmt.Sprintf("%v:%v", c.connOptions.Host, options.Port)
+
+	c.shutdown = make(chan bool, 1)
+	c.attachWg = sync.WaitGroup{}
+
+	c.telnet.conn, err = gote.Dial("tcp", host)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+
+	fmt.Println("TCP Connected, trying to login.")
+
+	c.stdout = c.telnet.conn
+	c.stdin = c.telnet.conn
+
+	go c.publisher.Attach(c.stdout, nil, c.shutdown, c.attachWg)
+
+	ready, err := c.loginTelnet(options.Username, options.Password)
+	if err != nil {
+		fmt.Println("unable to login to telnet using username/password combination.")
+		return err
+	}
+
+	if !ready {
+		fmt.Println("Unable to login to telnet, device is not ready.")
+		return errors.New("Device not ready.")
+	}
+
+	fmt.Println("Logged in to telnet. Connection ready.")
+	// brute set terminal length 0. Could be configured to detect type and send the correct line.
+	fmt.Println("Setting terminal length.")
+	c.stdin.Write([]byte("terminal length 0\r"))
+	c.stdin.Write([]byte("set length 0\r"))
+	c.ready = true
+	// need to login now
+	return nil
+}
+
+func (c *cisco) loginTelnet(username, password string) (bool, error) {
+	// detect "Login:" prompt
+	lr, err := regexp.Compile(`.*?[Ll]ogin:? *?$`)
+	if err != nil {
+		return false, err
+	}
+	_, err = c.writeExpectTimeout("", lr, time.Duration(20)*time.Second)
+	if err != nil {
+		return false, err
+	}
+	// detect "Password:" prompt
+	pr, err := regexp.Compile(`^.*?[Pp]assword:? *?$`)
+	if err != nil {
+		return false, err
+	}
+	_, err = c.writeExpectTimeout(username, pr, time.Duration(20)*time.Second)
+	if err != nil {
+		return false, err
+	}
+	_, err = c.writeExpectTimeout(password, c.prompt, time.Duration(20)*time.Second)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (c *cisco) Disconnect() bool {
+	if c.connOptions.Method == SSH {
+		c.ssh.session.Close()
+	}
+	if c.connOptions.Method == Telnet {
+		// write "exit" to the stream?
+		c.stdin.Write([]byte("exit\r"))
+	}
 	c.stdin.Close()
-	c.session.Close()
 	c.shutdown <- true
 	c.attachWg.Wait()
 	return true
@@ -110,6 +214,10 @@ func (c *cisco) Disconnect() bool {
 
 func (c *cisco) Enable(password string) (err error) {
 	return nil
+}
+
+func (c *cisco) Expect(expectation *regexp.Regexp, timeout time.Duration) (result []string, err error) {
+	return c.WriteExpectTimeout("", expectation, timeout)
 }
 
 func (c *cisco) Write(command string, newline bool) (int, error) {
@@ -120,16 +228,24 @@ func (c *cisco) Write(command string, newline bool) (int, error) {
 }
 
 func (c *cisco) WriteCapture(command string) (result []string, err error) {
-	return c.WriteExpect(command, c.prompt)
+	return c.WriteExpectTimeout(command, c.prompt, c.timeout)
 }
 
 func (c *cisco) WriteExpect(command string, expectation *regexp.Regexp) (result []string, err error) {
+	return c.WriteExpectTimeout(command, expectation, c.timeout)
+}
+
+func (c *cisco) WriteExpectTimeout(command string, expectation *regexp.Regexp,
+	timeout time.Duration) (result []string, err error) {
 	if !c.ready {
 		return result, errors.New("Device not ready to send another write command that requires capturing.")
 	}
-
 	c.ready = false
+	return c.writeExpectTimeout(command, expectation, timeout)
+}
 
+func (c *cisco) writeExpectTimeout(command string, expectation *regexp.Regexp,
+	timeout time.Duration) (result []string, err error) {
 	events := make(chan schema.MessageEvent, 20)
 	id := c.publisher.Subscribe(events)
 
@@ -138,21 +254,22 @@ func (c *cisco) WriteExpect(command string, expectation *regexp.Regexp) (result 
 		c.publisher.Unsubscribe(id)
 	}()
 
-	// write the command
-	_, err = c.Write(command, true)
-	if err != nil {
-		// Unable to write command
-		return []string{}, err
+	if len(command) > 0 {
+		// write the command
+		fmt.Println("Writing command: ", string(command))
+		_, err = c.Write(command, true)
+		if err != nil {
+			// Unable to write command
+			return []string{}, err
+		}
 	}
 
-	//create the timeout
-	cancel := make(chan bool, 1)
-	go func(timeout int) {
-		time.Sleep(time.Duration(timeout) * time.Second)
-		fmt.Println("\nTimer expired.")
-		cancel <- true
-	}(c.timeout)
+	return c.expect(events, expectation, timeout)
+}
 
+func (c *cisco) expect(events chan schema.MessageEvent, expectation *regexp.Regexp, timeout time.Duration) (result []string, err error) {
+	// Create the timeout timer using this device types default
+	timer := time.NewTimer(timeout)
 	for {
 		select {
 		case event := <-events:
@@ -166,13 +283,14 @@ func (c *cisco) WriteExpect(command string, expectation *regexp.Regexp) (result 
 			if event.Dir == schema.Stderr {
 				result = append(result, event.Message)
 			}
+			timer.Reset(timeout)
 			c.handleContinuation(event.Message)
-		case <-cancel:
+		case <-timer.C:
 			return result, errors.New("Command timeout reached without detecting expectation.")
+		default:
+			time.Sleep(time.Duration(20) * time.Millisecond)
 		}
 	}
-	return []string{}, errors.New("Reached end of WriteExpect without receiving line data. This error " +
-		"shouldn't happen.")
 }
 
 func (c *cisco) match(line string, reg *regexp.Regexp) bool {
@@ -188,8 +306,8 @@ func (c *cisco) Options() schema.ConnectOptions {
 func (c *cisco) handleContinuation(line string) {
 	for _, con := range c.continuation {
 		if matched := con.Find([]byte(line)); matched != nil {
-			// send enter key, bypassing the normal Write logic
-			c.stdin.Write([]byte("\r"))
+			fmt.Println("Found continuation request.")
+			c.Write(" ", true)
 		}
 	}
 }

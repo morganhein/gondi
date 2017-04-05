@@ -3,6 +3,7 @@ package gondi
 import (
 	"errors"
 
+	"fmt"
 	"github.com/morganhein/gondi/schema"
 	"github.com/morganhein/gondi/transport"
 )
@@ -22,8 +23,10 @@ func NewG() *Manager {
 
 // Connect tries to connect to the given device using the proposed method. It does not handle trying to connect
 // using other methods if the primary one fails, that should be handled upstream if there is an error.
-func (m *Manager) Connect(deviceType byte, id string, method byte, options schema.ConnectOptions) (schema.Device, error) {
+func (m *Manager) Connect(deviceType schema.DeviceType, id string, method schema.ConnectionMethod,
+	options schema.ConnectOptions) (schema.Device, error) {
 	device := transport.New(deviceType)
+	fmt.Println("Trying to connect from Manager.")
 
 	for _, supported := range device.SupportedMethods() {
 		if supported == method {

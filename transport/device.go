@@ -1,24 +1,26 @@
 package transport
 
 import (
+	"fmt"
 	"github.com/morganhein/gondi/schema"
 )
 
 const (
-	Cisco = iota
-	Juniper
+	Cisco schema.DeviceType = iota
 	Casa
+	Juniper
 	Adva
 )
 
 const (
-	SSH = iota
+	SSH schema.ConnectionMethod = iota
 	Telnet
 )
 
-func New(deviceType byte) schema.Device {
+func New(deviceType schema.DeviceType) schema.Device {
 	switch deviceType {
 	case Cisco:
+		fmt.Println("Cisco device.")
 		d := &cisco{}
 		err := d.Initialize()
 		if err != nil {
@@ -26,6 +28,7 @@ func New(deviceType byte) schema.Device {
 		}
 		return d
 	case Casa:
+		fmt.Println("Casa device.")
 		d := &casa{}
 		err := d.Initialize()
 		if err != nil {
@@ -33,6 +36,7 @@ func New(deviceType byte) schema.Device {
 		}
 		return d
 	default:
+		fmt.Println("Cisco device.")
 		d := &cisco{}
 		err := d.Initialize()
 		if err != nil {

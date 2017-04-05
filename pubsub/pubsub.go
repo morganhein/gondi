@@ -65,10 +65,12 @@ func (p *Publisher) Subscribe(s chan schema.MessageEvent) (id int) {
 	}
 	//Add the sub to the map with the next id in order
 	p.s[next] = s
+	fmt.Println("Subscribing from id", next, p)
 	return next
 }
 
 func (p *Publisher) Unsubscribe(id int) {
+	fmt.Println("Unsubscribing from id", id, p)
 	p.mut.Lock()
 	defer p.mut.Unlock()
 	if _, ok := p.s[id]; ok {
@@ -79,14 +81,16 @@ func (p *Publisher) Unsubscribe(id int) {
 // Attach creates the listeners for stdout and stderr,
 // and begins the publisher to distribute the messages to all subs.
 func (p *Publisher) Attach(stdout, stderr io.Reader, shutdown chan bool, wg sync.WaitGroup) {
-	fmt.Println("Device attached to publisher.")
+	//fmt.Println("Device attached to publisher.")
 	wg.Add(1)
 	defer wg.Done()
+	qstdout := make(chan bool, 1)
+	qstderr := make(chan bool, 1)
 	if stdout != nil {
-		go attachReader(p.device, stdout, schema.Stdout, p.input)
+		go attachReader(p.device, stdout, schema.Stdout, p.input, qstdout)
 	}
 	if stderr != nil {
-		go attachReader(p.device, stderr, schema.Stderr, p.input)
+		go attachReader(p.device, stderr, schema.Stderr, p.input, qstderr)
 	}
 	loopCancel := make(chan bool, 1)
 	loopWg := sync.WaitGroup{}
@@ -95,6 +99,8 @@ func (p *Publisher) Attach(stdout, stderr io.Reader, shutdown chan bool, wg sync
 		select {
 		case <-shutdown:
 			loopCancel <- true
+			qstdout <- true
+			qstderr <- true
 			break
 		}
 	}
@@ -126,13 +132,14 @@ func (p *Publisher) start(shutdown chan bool, wg sync.WaitGroup) {
 				}
 			}
 			sub.mut.RUnlock()
+		default:
 		}
 		time.Sleep(time.Duration(30) * time.Millisecond)
 	}
 }
 
-func attachReader(device schema.Device, r io.Reader, t schema.EventType, output chan schema.MessageEvent) {
-	fmt.Printf("Reader of type %v attached to r.\n", t)
+func attachReader(device schema.Device, r io.Reader, t schema.EventType, output chan schema.MessageEvent, stop chan bool) {
+	//fmt.Printf("Reader of type %v attached to r.\n", t)
 	scanner := bufio.NewScanner(r)
 	onNewline := func(data []byte, atEOF bool) (advance int, token []byte, err error) {
 		for i := 0; i < len(data); i++ {
@@ -143,16 +150,26 @@ func attachReader(device schema.Device, r io.Reader, t schema.EventType, output 
 		return len(data), data, nil
 	}
 	scanner.Split(onNewline)
-	for scanner.Scan() {
-		line := scanner.Text()
-		e := schema.MessageEvent{
-			Source:  device,
-			Message: line,
-			Dir:     t,
-			Time:    time.Now(),
+	for {
+		if ok := scanner.Scan(); ok {
+			line := scanner.Text()
+			e := schema.MessageEvent{
+				Source:  device,
+				Message: line,
+				Dir:     t,
+				Time:    time.Now(),
+			}
+			//fmt.Println("Pubsub received: ", e.Message)
+			output <- e
+		} else {
+			fmt.Println("Scanning stopped, this shouldn't of occurred.")
 		}
-		//fmt.Println(e.Message)
-		output <- e
+		select {
+		case <-stop:
+			fmt.Println("Reader loop closing.")
+			return
+		default:
+		}
 	}
 }
 
