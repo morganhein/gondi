@@ -114,7 +114,7 @@ func (p *Publisher) start(shutdown chan bool, wg sync.WaitGroup) {
 	for {
 		select {
 		case <-shutdown:
-			break
+			return
 		case line := <-p.input:
 			// Send to the locally subscribed listeners (probably just the device)
 			p.mut.RLock()
@@ -133,8 +133,8 @@ func (p *Publisher) start(shutdown chan bool, wg sync.WaitGroup) {
 			}
 			sub.mut.RUnlock()
 		default:
+			time.Sleep(time.Duration(30) * time.Millisecond)
 		}
-		time.Sleep(time.Duration(30) * time.Millisecond)
 	}
 }
 
