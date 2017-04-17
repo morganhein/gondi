@@ -8,6 +8,13 @@ import (
 type EventType int
 type DeviceType int
 type ConnectionMethod int
+type TransferMethod int
+
+const (
+	SCP TransferMethod = iota
+	FTP
+	TFTP
+)
 
 const (
 	Stdin  EventType = iota
@@ -29,7 +36,16 @@ type ConnectOptions struct {
 	Password       string
 	EnablePassword string
 	Cert           string
-	Method         ConnectionMethod
+	Method         ConnectionMethod // the method that this connection was successful with? not sure
+}
+
+type TransferOptions struct {
+	Host     string
+	Port     int
+	Username string
+	Password string
+	Cert     string
+	Method   TransferMethod
 }
 
 type Device interface {
@@ -56,12 +72,6 @@ type Device interface {
 	Options() ConnectOptions
 }
 
-type Configuration interface {
-	//Enable tries to enter "enable mode" on the device
-	Enable(password string) (err error)
-	Show(option string) (response string, err error)
-}
-
 type Logger interface {
 	Debug(args ...interface{})
 	Debugf(format string, args ...interface{})
@@ -71,4 +81,45 @@ type Logger interface {
 	Warningf(format string, args ...interface{})
 	Critical(args ...interface{})
 	Criticalf(format string, args ...interface{})
+}
+
+type Interaction interface {
+	Device
+	//Enable tries to enter "enable mode" on the device.
+	Enable() (err error)
+	//Enabled returns true if in enabled mode.
+	Enabled() bool
+	//ShowCurrent shows the running configuration. This can be either a config
+	//retrieved by using the SaveConfig command, or by a capture of the "show run" or
+	//analogous command.
+	//The Cached flag determines whether to retrieve a new version of the config, or
+	//to use a previously and current (probably) config
+	ShowConfig(cached bool) (response string, err error)
+	//SaveConfig saves the local config to a remote server
+	SaveConfig(options TransferOptions, file string) (err error)
+	//LoadConfig retrieves a config from a remote server and loads it
+	LoadConfig(options TransferOptions, file string) (err error)
+	//Ping sends a ping to the destination IP
+	Ping(ip string, tries, timeout int) (result string, err error)
+
+	//Possible other methods
+	//AddVlan tries to add the specified VLAN
+	AddVlan(identifier, comments string) (err error)
+	//RemVlan tries to remove the specified VLAN
+	RemVlan(identifier string) (err error)
+	//AddToVlan tries to add the specified interface to a VLAN
+	AddToVlan(identifier, vlan string) (err error)
+	//RemFromVlan tries to remove the specified interface from a VLAN
+	RemFromVlan(identifier, vlan string) (err error)
+	//Motd tries to set the motd/login banner of the device
+	Motd(motd string) (err error)
+	//Configure tries to enter "configure" mode, if available
+	Configure() (err error)
+	//What to call the "Configured" method? To detect if in configuration mode?
+	//InterfaceUp tries to bring up the specified interface
+	InterfaceUp(identifier string) (err error)
+	//InterfaceDown tries to shutdown the specified interface
+	InterfaceDown(identifier string) (err error)
+	//SaveCurrent saves the running configuration to memory
+	SaveCurrent() (err error)
 }
