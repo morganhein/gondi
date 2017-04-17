@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCasa_expect(t *testing.T) {
-	c := &casa{}
+func TestBase_expect(t *testing.T) {
+	c := &base{}
 	err := c.Initialize()
 
 	assert.NoError(t, err)
