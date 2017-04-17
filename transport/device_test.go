@@ -11,5 +11,5 @@ func TestNewDevice(t *testing.T) {
 	assert.IsType(t, &casa{}, d)
 
 	d = New(Cisco)
-	assert.IsType(t, &cisco{}, d)
+	assert.IsType(t, &ciscoxr{}, d)
 }
