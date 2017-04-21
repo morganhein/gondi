@@ -97,6 +97,22 @@ func (b base) Enabled() bool {
 	return false
 }
 
+func (b base) LoadConfig(schema.TransferOptions, string) error {
+	return nil
+}
+
+func (b base) SaveConfig(schema.TransferOptions, string) error {
+	return nil
+}
+
+func (b base) Storage() (result string, err error) {
+	panic("implement me")
+}
+
+func (b base) ShowConfig(cached bool) (response string, err error) {
+	return "", nil
+}
+
 func (b base) Configure() (err error) {
 	panic("implement me")
 }
