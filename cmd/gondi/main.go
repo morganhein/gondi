@@ -65,10 +65,11 @@ func main() {
 
 		log.Debug("Successfully connected to device.")
 		time.Sleep(time.Duration(1) * time.Second)
-		ret, err := dev.WriteCapture("show run")
+		//ret, err := dev.WriteCapture("show configuration")
+		//ret, err := dev.WriteCapture("show run")
+		ret, err := dev.WriteCapture("show version")
 		if err != nil {
 			log.Warningf("%s\n", err.Error())
-			continue
 		}
 		b, _ := json.MarshalIndent(ret, "", "  ")
 		log.Info("\nResult: ", string(b))

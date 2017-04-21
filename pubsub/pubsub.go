@@ -98,15 +98,14 @@ func (p *Publisher) Attach(stdout, stderr io.Reader, shutdown chan bool, wg sync
 	loopCancel := make(chan bool, 1)
 	loopWg := sync.WaitGroup{}
 	go p.start(loopCancel, loopWg)
-	for {
-		select {
-		case <-shutdown:
-			loopCancel <- true
-			qstdout <- true
-			qstderr <- true
-			break
-		}
-	}
+
+	// wait for shutdown signal
+	<-shutdown
+
+	loopCancel <- true
+	qstdout <- true
+	qstderr <- true
+
 	wg.Wait()
 	log.Debug("Device un-attached.")
 }
@@ -142,11 +141,11 @@ func (p *Publisher) start(shutdown chan bool, wg sync.WaitGroup) {
 }
 
 func attachReader(device schema.Device, r io.Reader, t schema.EventType, output chan schema.MessageEvent, stop chan bool) {
-	//fmt.Printf("Reader of type %v attached to r.\n", t)
 	scanner := bufio.NewScanner(r)
 	onNewline := func(data []byte, atEOF bool) (advance int, token []byte, err error) {
+
 		for i := 0; i < len(data); i++ {
-			if data[i] == '\n' {
+			if data[i] == '\n' || data[i] == '\r' {
 				return i + 1, data[:i], nil
 			}
 		}
@@ -162,8 +161,8 @@ func attachReader(device schema.Device, r io.Reader, t schema.EventType, output 
 				Dir:     t,
 				Time:    time.Now(),
 			}
-			//log.Debug("Pubsub received: ", e.Message)
 			output <- e
+			log.Debug("Pubsub sent: ", e.Message)
 		} else {
 			log.Warning("Scanning stopped, this error means a memory leak may be occurring.")
 		}
