@@ -99,6 +99,8 @@ type Interaction interface {
 	SaveConfig(options TransferOptions, file string) (err error)
 	//LoadConfig retrieves a config from a remote server and loads it
 	LoadConfig(options TransferOptions, file string) (err error)
+	//Mem returns long term storage memory usage
+	Storage() (result string, err error)
 	//Ping sends a ping to the destination IP
 	Ping(ip string, tries, timeout int) (result string, err error)
 
