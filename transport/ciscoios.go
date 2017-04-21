@@ -13,11 +13,11 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-type casa struct {
+type ciscoios struct {
 	base
 }
 
-func (c *casa) Initialize() error {
+func (c *ciscoios) Initialize() error {
 	c.events = make(chan schema.MessageEvent, 20)
 	c.publisher = pubsub.New(c, c.events)
 	c.prompt, _ = regexp.Compile(`> *$|# *$|\$ *$`)
@@ -31,32 +31,42 @@ func (c *casa) Initialize() error {
 	return nil
 }
 
-func (c *casa) Connect(method schema.ConnectionMethod, options schema.ConnectOptions, args ...string) error {
+func (c *ciscoios) Connect(method schema.ConnectionMethod, options schema.ConnectOptions, args ...string) error {
 	if method == SSH {
 		options.Method = SSH
-		log.Debug("Casa: connecting via SSH.")
 		if err := c.connectSsh(options); err != nil {
 			return err
 		}
+		// brute set terminal length 0. Could be configured to detect type and send the correct line.
 		log.Debug("Setting terminal length.")
-		c.stdin.Write([]byte("page-off\r"))
+		c.stdin.Write([]byte("terminal length 0\r"))
 		return nil
 	}
 	if method == Telnet {
 		options.Method = Telnet
-		log.Debug("Casa: connecting via Telnet.")
 		if err := c.connectTelnet(options); err != nil {
 			return err
 		}
+		// brute set terminal length 0. Could be configured to detect type and send the correct line.
 		log.Debug("Setting terminal length.")
-		c.stdin.Write([]byte("page-off\r"))
+		c.stdin.Write([]byte("terminal length 0\r"))
 		return nil
 	}
 	return errors.New("That connection type is currently not supported for this device.")
 }
 
-func (c *casa) connectSsh(options schema.ConnectOptions) error {
+func (c *ciscoios) connectSsh(options schema.ConnectOptions) error {
 	c.ssh.Config = CreateSSHConfig(options)
+	//c.ssh.Config.Ciphers = []string{
+	//	"aes128-cbc",
+	//	"aes256-cbc",
+	//	"aes128-ctr",
+	//	"aes192-ctr",
+	//	"aes256-ctr",
+	//	"aes128-gcm@openssh.com",
+	//	"arcfour256",
+	//	"arcfour128",
+	//}
 	c.connOptions.Method = SSH
 	host := fmt.Sprint(options.Host, ":", options.Port)
 	log.Info(c.ssh.Config.Ciphers)
@@ -99,7 +109,7 @@ func (c *casa) connectSsh(options schema.ConnectOptions) error {
 	return nil
 }
 
-func (c *casa) connectTelnet(options schema.ConnectOptions) (err error) {
+func (c *ciscoios) connectTelnet(options schema.ConnectOptions) (err error) {
 	c.connOptions = options
 	if c.connOptions.Port == 0 {
 		c.connOptions.Port = 23
@@ -140,11 +150,9 @@ func (c *casa) connectTelnet(options schema.ConnectOptions) (err error) {
 	return nil
 }
 
-func (c *casa) loginTelnet(username, password string) (bool, error) {
+func (c *ciscoios) loginTelnet(username, password string) (bool, error) {
 	// detect "Login:" prompt
-	//lr, err := regexp.Compile(`.*?[Uu]sername:? *?$`)
-	lr, err := regexp.Compile(`.*?[Ll]ogin:? *?$`)
-
+	lr, err := regexp.Compile(`.*?[Uu]sername:? *?$`)
 	if err != nil {
 		return false, err
 	}

@@ -3,14 +3,10 @@ package transport
 import (
 	"errors"
 	"fmt"
-	"io"
-	"net"
 	"regexp"
-	"runtime"
 	"sync"
 	"time"
 
-	"github.com/morganhein/go-telnet"
 	"github.com/morganhein/gondi/pubsub"
 	"github.com/morganhein/gondi/schema"
 	"golang.org/x/crypto/ssh"

@@ -24,7 +24,7 @@ const (
 	Casa
 	Juniper
 	Adva
-	IronFoundry
+	Foundry
 )
 
 const (
@@ -41,8 +41,16 @@ func init() {
 func New(deviceType schema.DeviceType) schema.Device {
 	log := logger.Log
 	switch deviceType {
-	case CiscoXR:
+	case Cisco:
 		log.Debug("Creating a new Cisco device.")
+		d := &ciscoios{}
+		err := d.Initialize()
+		if err != nil {
+			return nil
+		}
+		return d
+	case CiscoXR:
+		log.Debug("Creating a new CiscoXR device.")
 		d := &ciscoxr{}
 		err := d.Initialize()
 		if err != nil {
@@ -60,6 +68,14 @@ func New(deviceType schema.DeviceType) schema.Device {
 	case Juniper:
 		log.Debug("Creating a new Juniper device.")
 		d := &juniper{}
+		err := d.Initialize()
+		if err != nil {
+			return nil
+		}
+		return d
+	case Foundry:
+		log.Debug("Creating a new Foundry device.")
+		d := &foundry{}
 		err := d.Initialize()
 		if err != nil {
 			return nil
@@ -200,6 +216,7 @@ func (b base) connectTelnet(options schema.ConnectOptions) (err error) {
 
 	go b.publisher.Attach(b.stdout, nil, b.shutdown, b.attachWg)
 
+	fmt.Println("Trying to authenticate.")
 	ready, err := b.loginTelnet(options.Username, options.Password)
 	if err != nil {
 		log.Warningf("Unable to login to telnet using username/password combination.")
@@ -236,6 +253,7 @@ func (b base) loginTelnet(username, password string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	//todo: handle Authentication failures
 	_, err = b.writeExpectTimeout(password, b.prompt, time.Duration(20)*time.Second)
 	if err != nil {
 		return false, err
@@ -247,11 +265,11 @@ func (b base) Disconnect() bool {
 	if b.connOptions.Method == SSH {
 		b.ssh.session.Close()
 	}
-	if b.connOptions.Method == Telnet {
-		// write "exit" to the stream?
-		b.stdin.Write([]byte("exit\r"))
-	}
-	b.stdin.Close()
+	//if b.connOptions.Method == Telnet {
+	//	// write "exit" to the stream?
+	//	b.stdin.Write([]byte("exit\r"))
+	//}
+	_ = b.stdin.Close()
 	b.shutdown <- true
 	b.attachWg.Wait()
 	return true
@@ -314,14 +332,17 @@ func (b base) expect(events chan schema.MessageEvent, expectation *regexp.Regexp
 	for {
 		select {
 		case event := <-events:
+			//log.Debug("Received new event", event.Message)
 			if event.Dir == schema.Stdout {
 				result = append(result, event.Message)
+				//log.Debug("Matching line ", event.Message)
 				if found := b.match(event.Message, expectation); found {
 					log.Debug("Expectation matched.")
 					return result, nil
 				}
 			}
 			if event.Dir == schema.Stderr {
+				log.Debug("Encountered an error:", event.Message)
 				result = append(result, event.Message)
 			}
 			timer.Reset(timeout)
